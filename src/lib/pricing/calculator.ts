@@ -13,7 +13,7 @@ import type { NormalizedSchedule } from '@/lib/scheduling/recurrence-engine';
  * - Premium: Profissional de nível superior + supervisão de enfermagem
  * 
  * A precificação considera:
- * - Tipo de profissional (Cuidador, Auxiliar, Técnico de Enfermagem)
+ * - Tipo de profissional (Cuidador, Técnico de Enfermagem)
  * - Complexidade do caso (Baixa, Média, Alta)
  * - Horas diárias de atendimento
  * - Duração do serviço em dias
@@ -31,7 +31,6 @@ import type { NormalizedSchedule } from '@/lib/scheduling/recurrence-engine';
  */
 const TABELA_PRECOS: Record<TipoProfissional, { diurno: number; noturno: number; feriado: number }> = {
     CUIDADOR: { diurno: 15.00, noturno: 18.00, feriado: 22.50 },
-    AUXILIAR_ENF: { diurno: 22.00, noturno: 26.40, feriado: 33.00 },
     TECNICO_ENF: { diurno: 30.00, noturno: 36.00, feriado: 45.00 },
 };
 
@@ -111,8 +110,7 @@ export function calcularOrcamentoCenarios(input: OrcamentoInput): OrcamentoCenar
     // Reduz complexidade em 1 nível (se possível) ou usa profissional base
     // Exemplo: Se pediu TÉCNICO, tenta orçar com CUIDADOR + Supervisão (simulado)
     const inputEconomico = { ...input };
-    if (input.tipoProfissional === 'TECNICO_ENF') inputEconomico.tipoProfissional = 'AUXILIAR_ENF';
-    else if (input.tipoProfissional === 'AUXILIAR_ENF') inputEconomico.tipoProfissional = 'CUIDADOR';
+    if (input.tipoProfissional === 'TECNICO_ENF') inputEconomico.tipoProfissional = 'CUIDADOR';
 
     // Remove adicionais opcionais no econômico (simulação)
     const economico = calcularOrcamento(inputEconomico);
@@ -121,8 +119,7 @@ export function calcularOrcamentoCenarios(input: OrcamentoInput): OrcamentoCenar
     // 3. Cenário Premium
     // Adiciona margem de supervisão e garante melhor profissional
     const inputPremium = { ...input };
-    if (input.tipoProfissional === 'CUIDADOR') inputPremium.tipoProfissional = 'AUXILIAR_ENF';
-    else if (input.tipoProfissional === 'AUXILIAR_ENF') inputPremium.tipoProfissional = 'TECNICO_ENF';
+    if (input.tipoProfissional === 'CUIDADOR') inputPremium.tipoProfissional = 'TECNICO_ENF';
 
     // No Premium, adicionamos uma taxa extra de "Supervisão Enfermagem Semanal"
     // Vamos injetar isso manipulando o resultado (ou criando suporte no input)
@@ -546,6 +543,13 @@ export async function calculateEnterprisePricing(params: EnterprisePricingParams
             if (minicostsDisabled.has(rule.tipo.toUpperCase())) continue;
             if (!rule.ativoPadrao && !minicostsDisabled.has(rule.tipo.toUpperCase())) {
                 // Minicusto inativo por padrao so entra se nao estiver explicitamente desativado
+                continue;
+            }
+            // cobrancaUnica: cobra apenas 1x no período inteiro (não por plantão)
+            if (rule.cobrancaUnica) {
+                if (!(rule.tipo in minicosts)) {
+                    minicosts[rule.tipo] = safeCurrency(rule.valor);
+                }
                 continue;
             }
             const value = safeCurrency(rule.escalaHoras ? rule.valor * factorHours : rule.valor);

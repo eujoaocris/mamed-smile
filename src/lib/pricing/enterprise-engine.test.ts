@@ -33,7 +33,6 @@ function createConfig(overrides?: Partial<PricingConfigSnapshot>): PricingConfig
         aplicarTaxaAntesDesconto: false,
         base12h: {
             CUIDADOR: 180,
-            AUXILIAR_ENF: 240,
             TECNICO_ENF: 300,
             ENFERMEIRO: 360,
         },
@@ -65,6 +64,7 @@ function createConfig(overrides?: Partial<PricingConfigSnapshot>): PricingConfig
                 nome: 'Visita de supervisao',
                 valor: 35,
                 escalaHoras: false,
+                cobrancaUnica: false,
                 ativoPadrao: true,
                 opcionalNoFechamento: true,
             },
@@ -73,6 +73,7 @@ function createConfig(overrides?: Partial<PricingConfigSnapshot>): PricingConfig
                 nome: 'Reserva tecnica',
                 valor: 22,
                 escalaHoras: false,
+                cobrancaUnica: false,
                 ativoPadrao: true,
                 opcionalNoFechamento: true,
             },
@@ -86,7 +87,7 @@ function createConfig(overrides?: Partial<PricingConfigSnapshot>): PricingConfig
                 codigo: 'ALZHEIMER',
                 nome: 'Alzheimer',
                 complexidade: 'MEDIA',
-                profissionalMinimo: 'AUXILIAR_ENF',
+                profissionalMinimo: 'TECNICO_ENF',
                 adicionalPercent: 8,
                 ativa: true,
             },
@@ -134,8 +135,8 @@ describe('enterprise pricing engine', () => {
         }));
 
         expect(output.profissionalSolicitado).toBe('CUIDADOR');
-        expect(output.profissionalEfetivo).toBe('AUXILIAR_ENF');
-        expect(output.profissionalMinimoPorDoenca).toBe('AUXILIAR_ENF');
+        expect(output.profissionalEfetivo).toBe('TECNICO_ENF');
+        expect(output.profissionalMinimoPorDoenca).toBe('TECNICO_ENF');
         expect(output.diseasePercentTotal).toBe(8);
     });
 

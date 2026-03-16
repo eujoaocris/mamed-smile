@@ -36,10 +36,10 @@ const DEFAULT_PAYMENT_FEES = [
 ];
 
 const DEFAULT_MINI_COSTS = [
-    { tipo: 'VISITA_SUPERVISAO', nome: 'Visita de supervisao', valor: 35, escalaHoras: false, ativoPadrao: true, opcionalNoFechamento: true },
-    { tipo: 'RESERVA_TECNICA', nome: 'Reserva tecnica', valor: 22, escalaHoras: false, ativoPadrao: true, opcionalNoFechamento: true },
-    { tipo: 'ENFERMEIRO_EMERGENCIAL', nome: 'Enfermeiro emergencial', valor: 18, escalaHoras: true, ativoPadrao: false, opcionalNoFechamento: true },
-    { tipo: 'OUTROS', nome: 'Outros minicustos', valor: 12, escalaHoras: false, ativoPadrao: false, opcionalNoFechamento: true },
+    { tipo: 'VISITA_SUPERVISAO', nome: 'Visita de supervisao', valor: 35, escalaHoras: false, cobrancaUnica: false, ativoPadrao: true, opcionalNoFechamento: true },
+    { tipo: 'RESERVA_TECNICA', nome: 'Reserva tecnica', valor: 22, escalaHoras: false, cobrancaUnica: false, ativoPadrao: true, opcionalNoFechamento: true },
+    { tipo: 'ENFERMEIRO_EMERGENCIAL', nome: 'Enfermeiro emergencial', valor: 18, escalaHoras: true, cobrancaUnica: false, ativoPadrao: false, opcionalNoFechamento: true },
+    { tipo: 'OUTROS', nome: 'Outros minicustos', valor: 12, escalaHoras: false, cobrancaUnica: false, ativoPadrao: false, opcionalNoFechamento: true },
 ];
 
 const DEFAULT_COMMISSION_PERCENTS = [
@@ -57,18 +57,18 @@ const DEFAULT_DISCOUNTS = [
 ];
 
 const DEFAULT_DISEASES = [
-    { codigo: 'ALZHEIMER', nome: 'Alzheimer', complexidade: 'MEDIA', profissionalMinimo: 'AUXILIAR_ENF', adicionalPercent: 8 },
-    { codigo: 'PARKINSON', nome: 'Parkinson', complexidade: 'MEDIA', profissionalMinimo: 'AUXILIAR_ENF', adicionalPercent: 7 },
+    { codigo: 'ALZHEIMER', nome: 'Alzheimer', complexidade: 'MEDIA', profissionalMinimo: 'TECNICO_ENF', adicionalPercent: 8 },
+    { codigo: 'PARKINSON', nome: 'Parkinson', complexidade: 'MEDIA', profissionalMinimo: 'TECNICO_ENF', adicionalPercent: 7 },
     { codigo: 'AVC_SEQUELA', nome: 'AVC com sequela', complexidade: 'ALTA', profissionalMinimo: 'TECNICO_ENF', adicionalPercent: 12 },
-    { codigo: 'DEMENCIA', nome: 'Demencia', complexidade: 'MEDIA', profissionalMinimo: 'AUXILIAR_ENF', adicionalPercent: 6 },
+    { codigo: 'DEMENCIA', nome: 'Demencia', complexidade: 'MEDIA', profissionalMinimo: 'TECNICO_ENF', adicionalPercent: 6 },
 ];
 
 const DEFAULT_SERVICOS_AVULSOS = [
-    { codigo: 'BANHO_ASSISTIDO', nome: 'Banho assistido', valorCuidador: 80, valorAuxiliarEnf: 100, valorTecnicoEnf: 120, valorEnfermeiro: 150, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
-    { codigo: 'ACOMPANHAMENTO_CONSULTA', nome: 'Acompanhamento em consulta', valorCuidador: 120, valorAuxiliarEnf: 150, valorTecnicoEnf: 180, valorEnfermeiro: 220, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
-    { codigo: 'TROCA_FRALDA', nome: 'Troca de fralda', valorCuidador: 50, valorAuxiliarEnf: 60, valorTecnicoEnf: 70, valorEnfermeiro: 90, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
-    { codigo: 'APLICACAO_MEDICACAO', nome: 'Aplicação de medicação', valorCuidador: 0, valorAuxiliarEnf: 80, valorTecnicoEnf: 100, valorEnfermeiro: 130, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
-    { codigo: 'CURATIVOS', nome: 'Curativos', valorCuidador: 0, valorAuxiliarEnf: 90, valorTecnicoEnf: 110, valorEnfermeiro: 140, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+    { codigo: 'BANHO_ASSISTIDO', nome: 'Banho assistido', valorCuidador: 80, valorAuxiliarEnf: 120, valorTecnicoEnf: 120, valorEnfermeiro: 150, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+    { codigo: 'ACOMPANHAMENTO_CONSULTA', nome: 'Acompanhamento em consulta', valorCuidador: 120, valorAuxiliarEnf: 180, valorTecnicoEnf: 180, valorEnfermeiro: 220, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+    { codigo: 'TROCA_FRALDA', nome: 'Troca de fralda', valorCuidador: 50, valorAuxiliarEnf: 70, valorTecnicoEnf: 70, valorEnfermeiro: 90, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+    { codigo: 'APLICACAO_MEDICACAO', nome: 'Aplicação de medicação', valorCuidador: 0, valorAuxiliarEnf: 100, valorTecnicoEnf: 100, valorEnfermeiro: 130, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+    { codigo: 'CURATIVOS', nome: 'Curativos', valorCuidador: 0, valorAuxiliarEnf: 110, valorTecnicoEnf: 110, valorEnfermeiro: 140, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
 ];
 
 async function ensureDefaultRows(configVersionId: string, unidadeId: string) {
@@ -117,6 +117,7 @@ async function ensureDefaultRows(configVersionId: string, unidadeId: string) {
                 nome: item.nome,
                 valor: item.valor,
                 escalaHoras: item.escalaHoras,
+                cobrancaUnica: item.cobrancaUnica,
                 ativoPadrao: item.ativoPadrao,
                 opcionalNoFechamento: item.opcionalNoFechamento,
             },
@@ -237,7 +238,7 @@ export async function ensureDefaultPricingConfig() {
                     nome: 'Configuracao Inicial',
                     descricao: 'Versao inicial padrao da matriz',
                     baseCuidador12h: 180,
-                    baseAuxiliarEnf12h: 240,
+                    baseAuxiliarEnf12h: 300,
                     baseTecnicoEnf12h: 300,
                     baseEnfermeiro12h: 360,
                     margemPercent: 32,
@@ -302,6 +303,7 @@ function toMiniCostRules(rows: Array<{
     nome: string;
     valor: number;
     escalaHoras: boolean;
+    cobrancaUnica?: boolean;
     ativoPadrao: boolean;
     opcionalNoFechamento: boolean;
 }>): PricingMiniCostRule[] {
@@ -310,6 +312,7 @@ function toMiniCostRules(rows: Array<{
         nome: row.nome,
         valor: row.valor,
         escalaHoras: row.escalaHoras,
+        cobrancaUnica: row.cobrancaUnica ?? false,
         ativoPadrao: row.ativoPadrao,
         opcionalNoFechamento: row.opcionalNoFechamento,
     }));
@@ -412,7 +415,6 @@ export async function getPricingConfigSnapshot(options?: {
         aplicarTaxaAntesDesconto: configVersion.aplicarTaxaAntesDesconto,
         base12h: {
             CUIDADOR: configVersion.baseCuidador12h,
-            AUXILIAR_ENF: configVersion.baseAuxiliarEnf12h,
             TECNICO_ENF: configVersion.baseTecnicoEnf12h,
             ENFERMEIRO: configVersion.baseEnfermeiro12h ?? configVersion.baseTecnicoEnf12h,
         },

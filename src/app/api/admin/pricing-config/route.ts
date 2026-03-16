@@ -61,7 +61,6 @@ export async function GET(req: NextRequest) {
             // Valores base por plantão de 12h
             base12h: {
                 CUIDADOR: configVersion.baseCuidador12h,
-                AUXILIAR_ENF: configVersion.baseAuxiliarEnf12h,
                 TECNICO_ENF: configVersion.baseTecnicoEnf12h,
                 ENFERMEIRO: configVersion.baseEnfermeiro12h ?? configVersion.baseTecnicoEnf12h,
             },
@@ -129,7 +128,7 @@ export async function PUT(req: NextRequest) {
             where: { id: configVersion.id },
             data: {
                 baseCuidador12h: base12h?.CUIDADOR ?? configVersion.baseCuidador12h,
-                baseAuxiliarEnf12h: base12h?.AUXILIAR_ENF ?? configVersion.baseAuxiliarEnf12h,
+                baseAuxiliarEnf12h: base12h?.TECNICO_ENF ?? configVersion.baseAuxiliarEnf12h,
                 baseTecnicoEnf12h: base12h?.TECNICO_ENF ?? configVersion.baseTecnicoEnf12h,
                 baseEnfermeiro12h: base12h?.ENFERMEIRO ?? configVersion.baseEnfermeiro12h,
                 adicionalSegundoPacientePercent: adicionais?.segundoPaciente ?? configVersion.adicionalSegundoPacientePercent,
@@ -176,8 +175,8 @@ export async function PUT(req: NextRequest) {
             for (const mc of miniCosts) {
                 await prisma.unidadeMinicusto.upsert({
                     where: { configVersionId_tipo: { configVersionId: configVersion.id, tipo: mc.tipo } },
-                    create: { unidadeId, configVersionId: configVersion.id, tipo: mc.tipo, nome: mc.nome, valor: mc.valor, escalaHoras: mc.escalaHoras ?? false, ativoPadrao: mc.ativoPadrao ?? true, opcionalNoFechamento: mc.opcionalNoFechamento ?? true },
-                    update: { nome: mc.nome, valor: mc.valor, escalaHoras: mc.escalaHoras ?? false, ativoPadrao: mc.ativoPadrao ?? true, opcionalNoFechamento: mc.opcionalNoFechamento ?? true },
+                    create: { unidadeId, configVersionId: configVersion.id, tipo: mc.tipo, nome: mc.nome, valor: mc.valor, escalaHoras: mc.escalaHoras ?? false, cobrancaUnica: mc.cobrancaUnica ?? false, ativoPadrao: mc.ativoPadrao ?? true, opcionalNoFechamento: mc.opcionalNoFechamento ?? true },
+                    update: { nome: mc.nome, valor: mc.valor, escalaHoras: mc.escalaHoras ?? false, cobrancaUnica: mc.cobrancaUnica ?? false, ativoPadrao: mc.ativoPadrao ?? true, opcionalNoFechamento: mc.opcionalNoFechamento ?? true },
                 });
             }
         }

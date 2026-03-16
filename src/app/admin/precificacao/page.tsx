@@ -27,7 +27,7 @@ import {
 
 interface HourRule { id?: string; hora: number; fatorPercent: number; ativa: boolean }
 interface PaymentFee { id?: string; metodo: string; periodo: string; taxaPercent: number; ativa: boolean }
-interface MiniCost { id?: string; tipo: string; nome: string; valor: number; escalaHoras: boolean; ativoPadrao: boolean; opcionalNoFechamento: boolean }
+interface MiniCost { id?: string; tipo: string; nome: string; valor: number; escalaHoras: boolean; cobrancaUnica: boolean; ativoPadrao: boolean; opcionalNoFechamento: boolean }
 interface CommissionPercent { id?: string; tipo: string; nome: string; percentual: number; ativo: boolean }
 interface Disease { id?: string; codigo: string; nome: string; complexidade: string; profissionalMinimo: string; adicionalPercent: number; ativa: boolean }
 interface Discount { id?: string; nome: string; etiqueta?: string; percentual: number; ativo: boolean }
@@ -39,7 +39,7 @@ interface PricingConfig {
     unidadeId: string;
     configVersionId: string;
     configVersion: number;
-    base12h: { CUIDADOR: number; AUXILIAR_ENF: number; TECNICO_ENF: number; ENFERMEIRO: number };
+    base12h: { CUIDADOR: number; TECNICO_ENF: number; ENFERMEIRO: number };
     adicionais: {
         segundoPaciente: number; noturno: number; fimSemana: number; feriado: number;
         altoRisco: number; at: number; aa: number; atEscalaHoras: boolean; aaEscalaHoras: boolean;
@@ -245,7 +245,7 @@ export default function PrecificacaoConfigPage() {
         setConfig({
             ...config, miniCosts: [...config.miniCosts, {
                 tipo: `NOVO_${Date.now()}`, nome: 'Novo minicusto', valor: 0,
-                escalaHoras: false, ativoPadrao: true, opcionalNoFechamento: true,
+                escalaHoras: false, cobrancaUnica: false, ativoPadrao: true, opcionalNoFechamento: true,
             }],
         });
         setDirty(true);
@@ -309,7 +309,7 @@ export default function PrecificacaoConfigPage() {
         if (!config) return;
         setConfig({
             ...config, servicosAvulsos: [...config.servicosAvulsos, {
-                codigo: `SVC_${Date.now()}`, nome: 'Novo serviço', valorCuidador: 0, valorAuxiliarEnf: 0,
+                codigo: `SVC_${Date.now()}`, nome: 'Novo serviço', valorCuidador: 0, valorAuxiliarEnf: 0, /* kept for DB compat */
                 valorTecnicoEnf: 0, valorEnfermeiro: 0, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true, ativo: true,
             }],
         });
@@ -415,7 +415,6 @@ export default function PrecificacaoConfigPage() {
                             <div className="ml-2 p-4 rounded-xl border border-border bg-card/50 space-y-4">
                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                     <InputField label="Cuidador (12h)" value={config.base12h.CUIDADOR} onChange={(v) => updateBase12h('CUIDADOR', v)} suffix="R$" />
-                                    <InputField label="Auxiliar Enf. (12h)" value={config.base12h.AUXILIAR_ENF} onChange={(v) => updateBase12h('AUXILIAR_ENF', v)} suffix="R$" />
                                     <InputField label="Técnico Enf. (12h)" value={config.base12h.TECNICO_ENF} onChange={(v) => updateBase12h('TECNICO_ENF', v)} suffix="R$" />
                                     <InputField label="Enfermeiro (12h)" value={config.base12h.ENFERMEIRO} onChange={(v) => updateBase12h('ENFERMEIRO', v)} suffix="R$" />
                                 </div>
@@ -582,6 +581,7 @@ export default function PrecificacaoConfigPage() {
                                         </div>
                                         <div className="flex flex-wrap gap-4">
                                             <ToggleField label="Escala com horas" checked={mc.escalaHoras} onChange={(v) => updateMiniCost(idx, 'escalaHoras', v)} />
+                                            <ToggleField label="Cobrança única" checked={mc.cobrancaUnica} onChange={(v) => updateMiniCost(idx, 'cobrancaUnica', v)} />
                                             <ToggleField label="Ativo por padrão" checked={mc.ativoPadrao} onChange={(v) => updateMiniCost(idx, 'ativoPadrao', v)} />
                                             <ToggleField label="Opcional no fechamento" checked={mc.opcionalNoFechamento} onChange={(v) => updateMiniCost(idx, 'opcionalNoFechamento', v)} />
                                         </div>
@@ -656,7 +656,6 @@ export default function PrecificacaoConfigPage() {
                                                     className="w-full h-9 rounded-lg border border-border bg-input px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
                                                 >
                                                     <option value="CUIDADOR">Cuidador</option>
-                                                    <option value="AUXILIAR_ENF">Auxiliar Enf.</option>
                                                     <option value="TECNICO_ENF">Técnico Enf.</option>
                                                     <option value="ENFERMEIRO">Enfermeiro</option>
                                                 </select>
@@ -720,7 +719,6 @@ export default function PrecificacaoConfigPage() {
                                         <div className="text-xs font-medium text-muted-foreground mb-1">Valor pago ao profissional (R$)</div>
                                         <div className="flex items-center gap-3 flex-wrap">
                                             <InputField label="Cuidador" value={svc.valorCuidador} onChange={(v) => updateServicoAvulso(idx, 'valorCuidador', v)} prefix="R$" />
-                                            <InputField label="Auxiliar Enf." value={svc.valorAuxiliarEnf} onChange={(v) => updateServicoAvulso(idx, 'valorAuxiliarEnf', v)} prefix="R$" />
                                             <InputField label="Técnico Enf." value={svc.valorTecnicoEnf} onChange={(v) => updateServicoAvulso(idx, 'valorTecnicoEnf', v)} prefix="R$" />
                                             <InputField label="Enfermeiro" value={svc.valorEnfermeiro} onChange={(v) => updateServicoAvulso(idx, 'valorEnfermeiro', v)} prefix="R$" />
                                         </div>

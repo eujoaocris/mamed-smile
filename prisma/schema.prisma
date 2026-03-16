@@ -511,6 +511,7 @@ model UnidadeMinicusto {
   nome                 String
   valor                Float
   escalaHoras          Boolean  @default(false)
+  cobrancaUnica        Boolean  @default(false)
   ativoPadrao          Boolean  @default(true)
   opcionalNoFechamento Boolean  @default(true)
   createdAt            DateTime @default(now())

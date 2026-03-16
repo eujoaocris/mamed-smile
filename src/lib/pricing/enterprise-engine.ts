@@ -1,4 +1,4 @@
-export type PricingProfessional = 'CUIDADOR' | 'AUXILIAR_ENF' | 'TECNICO_ENF' | 'ENFERMEIRO';
+export type PricingProfessional = 'CUIDADOR' | 'TECNICO_ENF' | 'ENFERMEIRO';
 export type PricingComplexity = 'BAIXA' | 'MEDIA' | 'ALTA';
 
 export interface PricingHourRule {
@@ -18,6 +18,7 @@ export interface PricingMiniCostRule {
     nome: string;
     valor: number;
     escalaHoras: boolean;
+    cobrancaUnica: boolean;
     ativoPadrao: boolean;
     opcionalNoFechamento: boolean;
 }
@@ -54,7 +55,6 @@ export interface PricingConfigSnapshot {
     aplicarTaxaAntesDesconto: boolean;
     base12h: {
         CUIDADOR: number;
-        AUXILIAR_ENF: number;
         TECNICO_ENF: number;
         ENFERMEIRO: number;
     };
@@ -139,6 +139,7 @@ export interface PricingCalculationOutput {
         nome: string;
         valorAplicado: number;
         escalaHoras: boolean;
+        cobrancaUnica?: boolean;
     }>;
     minicustosTotal: number;
     subtotalSemTaxaSemDesconto: number;
@@ -152,9 +153,8 @@ export interface PricingCalculationOutput {
 
 const PROFESSIONAL_RANK: Record<PricingProfessional, number> = {
     CUIDADOR: 1,
-    AUXILIAR_ENF: 2,
-    TECNICO_ENF: 3,
-    ENFERMEIRO: 4,
+    TECNICO_ENF: 2,
+    ENFERMEIRO: 3,
 };
 
 function round2(value: number): number {
@@ -171,7 +171,7 @@ function clampPercent(value: number): number {
 function normalizeProfessional(value: string): PricingProfessional | null {
     const normalized = String(value || '').trim().toUpperCase();
     if (normalized === 'CUIDADOR') return 'CUIDADOR';
-    if (normalized === 'AUXILIAR_ENF') return 'AUXILIAR_ENF';
+    if (normalized === 'AUXILIAR_ENF') return 'TECNICO_ENF';
     if (normalized === 'TECNICO_ENF') return 'TECNICO_ENF';
     if (normalized === 'ENFERMEIRO') return 'ENFERMEIRO';
     return null;
@@ -324,12 +324,16 @@ export function calculateEnterprisePrice(
         const override = input.minicustosOverrides?.[rule.tipo];
         const active = typeof override === 'boolean' ? override : rule.ativoPadrao;
         if (!active) return [];
-        const value = round2(rule.escalaHoras ? rule.valor * factorHours : rule.valor);
+        // cobrancaUnica: valor fixo 1x no período, não multiplica por dias/horas
+        const value = rule.cobrancaUnica
+            ? round2(rule.valor)
+            : round2(rule.escalaHoras ? rule.valor * factorHours : rule.valor);
         return [{
             tipo: rule.tipo,
             nome: rule.nome,
             valorAplicado: value,
             escalaHoras: rule.escalaHoras,
+            cobrancaUnica: rule.cobrancaUnica,
         }];
     });
     const minicustosTotal = round2(minicustosAtivos.reduce((acc, item) => acc + item.valorAplicado, 0));

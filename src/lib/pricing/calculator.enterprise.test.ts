@@ -22,7 +22,6 @@ function createConfig(overrides?: Partial<PricingConfigSnapshot>): PricingConfig
         aplicarTaxaAntesDesconto: false,
         base12h: {
             CUIDADOR: 180,
-            AUXILIAR_ENF: 240,
             TECNICO_ENF: 300,
             ENFERMEIRO: 360,
         },
@@ -65,6 +64,7 @@ function createConfig(overrides?: Partial<PricingConfigSnapshot>): PricingConfig
                 nome: 'Visita supervisao',
                 valor: 20,
                 escalaHoras: false,
+                cobrancaUnica: false,
                 ativoPadrao: true,
                 opcionalNoFechamento: true,
             },
@@ -73,6 +73,7 @@ function createConfig(overrides?: Partial<PricingConfigSnapshot>): PricingConfig
                 nome: 'Reserva tecnica',
                 valor: 10,
                 escalaHoras: false,
+                cobrancaUnica: false,
                 ativoPadrao: true,
                 opcionalNoFechamento: true,
             },
