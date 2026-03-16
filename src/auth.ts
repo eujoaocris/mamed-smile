@@ -4,6 +4,7 @@ import { authConfig } from './auth.config';
 import Credentials from 'next-auth/providers/credentials';
 import { z } from 'zod';
 import { resolveUserRole, type AdminRole } from '@/lib/auth/roles';
+import { resolveUserUnidades } from '@/lib/auth/user-unidades';
 
 function timingSafeCompare(a: string, b: string): boolean {
     const bufA = Buffer.from(a, 'utf8');
@@ -57,16 +58,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     callbacks: {
         ...authConfig.callbacks,
         async jwt({ token, user }) {
-            if (user?.email) {
-                token.role = resolveUserRole(user.email);
-            } else if (!token.role) {
-                token.role = resolveUserRole(token.email || null);
+            const email = user?.email || token.email || null;
+            if (!email) return token;
+
+            // Try DB-based unit resolution first
+            const unidadeResult = await resolveUserUnidades(email);
+            if (unidadeResult) {
+                token.role = unidadeResult.role;
+                token.isGlobal = unidadeResult.isGlobal;
+                token.unidades = unidadeResult.unidades;
+            } else {
+                // Fallback to env-var based roles (backwards compatible)
+                token.role = resolveUserRole(email);
+                token.isGlobal = token.role === 'ADMIN';
+                token.unidades = [];
             }
+
+            // Preserve active unit selection
+            if (token.activeUnidadeId === undefined) {
+                token.activeUnidadeId = null;
+            }
+
             return token;
         },
         async session({ session, token }) {
             if (session.user) {
                 session.user.role = (token.role as AdminRole) || resolveUserRole(session.user.email || null);
+                session.user.isGlobal = (token.isGlobal as boolean | undefined) ?? false;
+                session.user.unidades = (token.unidades as typeof session.user.unidades) ?? [];
+                session.user.activeUnidadeId = (token.activeUnidadeId as string | null | undefined) ?? null;
             }
             return session;
         },

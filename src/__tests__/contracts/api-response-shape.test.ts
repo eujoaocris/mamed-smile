@@ -40,7 +40,7 @@ vi.mock('@/lib/observability/metrics', () => ({
 
 // ---- Auth mock: authenticate all requests ----
 vi.mock('@/lib/auth/capability-guard', () => ({
-    guardCapability: vi.fn().mockResolvedValue({ role: 'ADMIN', userId: 'admin@test.com' }),
+    guardCapability: vi.fn().mockResolvedValue({ role: 'ADMIN', userId: 'admin@test.com', isGlobal: true, unidades: [], activeUnidadeId: null }),
 }));
 
 vi.mock('@/auth', () => ({

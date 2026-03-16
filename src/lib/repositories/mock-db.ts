@@ -131,6 +131,7 @@ export const MockRepository: IDatabaseFactory = {
                 whatsappErro: null,
                 whatsappTentativas: 0,
                 valorProposto: null,
+                unidadeId: null,
                 deletedAt: null,
                 createdAt: new Date()
             };
@@ -201,6 +202,7 @@ export const MockRepository: IDatabaseFactory = {
                 respondidoEm: null,
                 confirmadoT24: null,
                 confirmadoT2: null,
+                unidadeId: null,
                 deletedAt: null,
                 createdAt: new Date()
             };

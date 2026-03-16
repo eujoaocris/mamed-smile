@@ -43,7 +43,7 @@ function req(): NextRequest {
 describe('GET /api/admin/avaliacoes/[id]', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.guardCapability.mockResolvedValue({ role: 'ADMIN', userId: 'admin@test.com' });
+        mocks.guardCapability.mockResolvedValue({ role: 'ADMIN', userId: 'admin@test.com', isGlobal: true, unidades: [], activeUnidadeId: null });
         mocks.getDbSchemaCapabilities.mockResolvedValue({
             dbSchemaOk: true,
             missingColumns: [],

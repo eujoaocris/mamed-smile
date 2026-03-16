@@ -8,20 +8,21 @@ datasource db {
 }
 
 model Cuidador {
-  id           String     @id @default(cuid())
-  telefone     String     @unique
+  id           String             @id @default(cuid())
+  telefone     String             @unique
   nome         String?
   area         String?
-  status       String     @default("CRIADO")
+  status       String             @default("CRIADO")
   quizScore    Int?
   scoreRH      Int?
   competencias String?
   endereco     String?
   deletedAt    DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
   alocacoes    Alocacao[]
   mensagens    Mensagem[]
+  unidades     CuidadorUnidade[]
 }
 
 model Paciente {
@@ -36,6 +37,7 @@ model Paciente {
   status     String               @default("LEAD")
   prioridade String               @default("NORMAL")
   gqpScore   Int?
+  unidadeId  String?
   deletedAt  DateTime?
   createdAt  DateTime             @default(now())
   updatedAt  DateTime             @updatedAt
@@ -44,6 +46,9 @@ model Paciente {
   mensagens  Mensagem[]
   orcamentos Orcamento[]
   simulacoes OrcamentoSimulacao[]
+  unidade    Unidade?             @relation(fields: [unidadeId], references: [id])
+
+  @@index([unidadeId])
 }
 
 model Mensagem {
@@ -74,9 +79,11 @@ model Avaliacao {
   avaliadorId     String?
   validadoEm      DateTime?
   status          String    @default("PENDENTE")
+  unidadeId       String?
   deletedAt       DateTime?
   createdAt       DateTime  @default(now())
   paciente        Paciente  @relation(fields: [pacienteId], references: [id])
+  unidade         Unidade?  @relation(fields: [unidadeId], references: [id])
   dadosDetalhados String? // JSON com discovery, patient, clinical, abemid, etc
 
   // Campos de rastreamento WhatsApp
@@ -88,6 +95,8 @@ model Avaliacao {
   valorProposto      String?
   orcamentos         Orcamento[]
   simulacoes         OrcamentoSimulacao[]
+
+  @@index([unidadeId])
 }
 
 model Orcamento {
@@ -149,10 +158,14 @@ model Alocacao {
   respondidoEm  DateTime?
   confirmadoT24 DateTime?
   confirmadoT2  DateTime?
+  unidadeId     String?
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
   paciente      Paciente? @relation(fields: [pacienteId], references: [id])
   cuidador      Cuidador  @relation(fields: [cuidadorId], references: [id])
+  unidade       Unidade?  @relation(fields: [unidadeId], references: [id])
+
+  @@index([unidadeId])
 }
 
 model FormSubmission {
@@ -361,6 +374,42 @@ model WhatsAppAnalytics {
 }
 
 // ==========================================
+// GESTAO MULTI-UNIDADE
+// ==========================================
+
+// Vincula usuário (por email) a uma ou mais unidades com role específico por unidade
+model UsuarioUnidade {
+  id          String   @id @default(cuid())
+  email       String
+  unidadeId   String?  // null = acesso global (administração total)
+  role        String   // AdminRole — role do usuário NESTA unidade
+  ativo       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  unidade Unidade? @relation(fields: [unidadeId], references: [id], onDelete: Cascade)
+
+  @@unique([email, unidadeId])
+  @@index([email, ativo])
+  @@index([unidadeId])
+}
+
+// Many-to-many: profissional pode atuar em múltiplas unidades
+model CuidadorUnidade {
+  id         String   @id @default(cuid())
+  cuidadorId String
+  unidadeId  String
+  ativo      Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  cuidador Cuidador @relation(fields: [cuidadorId], references: [id], onDelete: Cascade)
+  unidade  Unidade  @relation(fields: [unidadeId], references: [id], onDelete: Cascade)
+
+  @@unique([cuidadorId, unidadeId])
+  @@index([unidadeId, ativo])
+}
+
+// ==========================================
 // PRECIFICACAO ENTERPRISE (MULTI-UNIDADE)
 // ==========================================
 
@@ -379,6 +428,11 @@ model Unidade {
 
   parentUnidade       Unidade?                    @relation("UnidadeHierarchy", fields: [parentUnidadeId], references: [id])
   filiais             Unidade[]                   @relation("UnidadeHierarchy")
+  usuarios            UsuarioUnidade[]
+  cuidadores          CuidadorUnidade[]
+  pacientes           Paciente[]
+  avaliacoes          Avaliacao[]
+  alocacoes           Alocacao[]
   configuracoes       UnidadeConfiguracaoVersao[]
   doencas             UnidadeDoencaRegra[]
   regrasHoras         UnidadeRegraHora[]

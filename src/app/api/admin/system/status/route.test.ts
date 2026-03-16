@@ -64,7 +64,7 @@ function makeRequest() {
 describe('GET /api/admin/system/status', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockGuard.mockResolvedValue({ role: 'ADMIN' as any, userId: 'admin@test.com' });
+        mockGuard.mockResolvedValue({ role: 'ADMIN' as any, userId: 'admin@test.com', isGlobal: true, unidades: [], activeUnidadeId: null });
     });
 
     it('returns 200 with correct structure', async () => {
