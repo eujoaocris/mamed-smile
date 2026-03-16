@@ -4,6 +4,7 @@ import { guardCapability } from '@/lib/auth/capability-guard';
 import { withErrorBoundary } from '@/lib/api/with-error-boundary';
 import { prisma } from '@/lib/prisma';
 import {
+    type PricingBreakdownItem,
     type PricingCalculationInput,
     type PricingCalculationOutput,
     type PricingConfigSnapshot,
@@ -37,6 +38,7 @@ interface CenarioData {
     descontos: Array<{ periodo: string; percentual: number }>;
     coberturaInicio: string;
     coberturaFim: string;
+    breakdown: PricingBreakdownItem[];
 }
 
 const BASE_PLANTOES = [
@@ -115,6 +117,7 @@ function toCenarioData(
         ],
         coberturaInicio,
         coberturaFim,
+        breakdown: calc.breakdown,
     };
 }
 

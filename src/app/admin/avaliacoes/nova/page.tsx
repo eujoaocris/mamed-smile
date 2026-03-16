@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import StepDiscovery, { DiscoveryData } from './steps/StepDiscovery';
 import StepPatientInfo, { PatientInfoData } from './steps/StepPatientInfo';
@@ -13,6 +13,8 @@ import StepEvaluator, { EvaluatorData } from './steps/StepEvaluator';
 import { KATZEvaluation, LawtonEvaluation } from '@/types/evaluation';
 import { estimatePlanning, type PlanningEstimateOutput } from '@/lib/pricing/planning-estimator';
 import type { PlanningInput as RecurrencePlanningInput, RecurrenceType } from '@/lib/scheduling/recurrence-engine';
+import { BreakdownTable, calculatorBreakdownToLines } from '@/components/pricing/BreakdownTable';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 type StepKey =
     | 'selector'
@@ -235,6 +237,25 @@ const PLANNING_PRESETS: PlanningPreset[] = [
     { id: 'CONTINUO_24H_30D', label: '24x7 por 30 dias' },
 ];
 
+const WEEKDAYS = [
+    { key: 'dom', label: 'D' },
+    { key: 'seg', label: 'S' },
+    { key: 'ter', label: 'T' },
+    { key: 'qua', label: 'Q' },
+    { key: 'qui', label: 'Q' },
+    { key: 'sex', label: 'S' },
+    { key: 'sab', label: 'S' },
+] as const;
+
+const MINICUSTO_OPTIONS = [
+    { tipo: 'RESERVA_TECNICA', nome: 'Reserva tecnica' },
+    { tipo: 'VISITA_SUPERVISAO', nome: 'Visita supervisao' },
+    { tipo: 'UNIFORME', nome: 'Uniforme' },
+    { tipo: 'TREINAMENTO', nome: 'Treinamento' },
+    { tipo: 'SEGURO', nome: 'Seguro' },
+    { tipo: 'TRANSPORTE', nome: 'Transporte' },
+] as const;
+
 export default function NewEvaluationPage() {
     const [step, setStep] = useState<StepKey>('selector');
     const [searchQuery, setSearchQuery] = useState('');
@@ -384,6 +405,7 @@ export default function NewEvaluationPage() {
         tipoProfissional: null,
     });
     const [sending, setSending] = useState(false);
+    const [advancedOpen, setAdvancedOpen] = useState(false);
     const [proposal, setProposal] = useState({
         valorTotal: 0,
         entrada: 0,
@@ -427,6 +449,67 @@ export default function NewEvaluationPage() {
         tempoCuidadoDescricao: '',
         alocacaoResumo: '',
     });
+
+    // ── Session persistence (survives reload, clears on tab close) ──
+    const STORAGE_KEY = 'avaliacao_nova_draft';
+    const hydrated = useRef(false);
+
+    // Restore state from sessionStorage on mount
+    useEffect(() => {
+        try {
+            const raw = sessionStorage.getItem(STORAGE_KEY);
+            if (!raw) return;
+            const saved = JSON.parse(raw);
+            if (saved.step) setStep(saved.step);
+            if (saved.selectedPatient) setSelectedPatient(saved.selectedPatient);
+            if (saved.hospitalDetails) setHospitalDetails(saved.hospitalDetails);
+            if (saved.selectedNivel) setSelectedNivel(saved.selectedNivel);
+            if (saved.discoveryData) setDiscoveryData(saved.discoveryData);
+            if (saved.patientData) setPatientData(saved.patientData);
+            if (saved.clinicalData) setClinicalData(saved.clinicalData);
+            if (saved.abemidData) setAbemidData(saved.abemidData);
+            if (saved.katzData) setKatzData(saved.katzData);
+            if (saved.lawtonData) setLawtonData(saved.lawtonData);
+            if (saved.responsibilitiesData) setResponsibilitiesData(saved.responsibilitiesData);
+            if (saved.evaluatorData) setEvaluatorData(saved.evaluatorData);
+            if (saved.orcamentos) setOrcamentos(saved.orcamentos);
+            if (saved.planoResumoOverrides) setPlanoResumoOverrides(saved.planoResumoOverrides);
+            if (saved.proposal) setProposal(saved.proposal);
+            if (saved.planejamento360) setPlanejamento360(saved.planejamento360);
+        } catch { /* corrupt data — start fresh */ }
+        hydrated.current = true;
+    }, []);
+
+    // Save state to sessionStorage on changes (debounced)
+    const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistState = useCallback(() => {
+        if (!hydrated.current) return;
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => {
+            try {
+                sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+                    step,
+                    selectedPatient,
+                    hospitalDetails,
+                    selectedNivel,
+                    discoveryData,
+                    patientData,
+                    clinicalData,
+                    abemidData,
+                    katzData,
+                    lawtonData,
+                    responsibilitiesData,
+                    evaluatorData,
+                    orcamentos,
+                    planoResumoOverrides,
+                    proposal,
+                    planejamento360,
+                }));
+            } catch { /* storage full — ignore */ }
+        }, 500);
+    }, [step, selectedPatient, hospitalDetails, selectedNivel, discoveryData, patientData, clinicalData, abemidData, katzData, lawtonData, responsibilitiesData, evaluatorData, orcamentos, planoResumoOverrides, proposal, planejamento360]);
+
+    useEffect(() => { persistState(); }, [persistState]);
 
     const selectedScenario = useMemo(() => {
         if (!orcamentos) return null;
@@ -1048,6 +1131,7 @@ export default function NewEvaluationPage() {
             });
             if (res.ok) {
                 setSuccess(true);
+                try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
                 setTimeout(() => {
                     window.location.href = '/admin/avaliacoes';
                 }, 2000);
@@ -1130,28 +1214,208 @@ export default function NewEvaluationPage() {
     }
 
     if (step === 'proposal') {
+        const disabledMinicustos = new Set(planejamento360.minicustosDesativadosCsv.split(',').map((s) => s.trim()).filter(Boolean));
+        const toggleMinicusto = (tipo: string) => {
+            setPlanejamento360((p) => {
+                const current = new Set(p.minicustosDesativadosCsv.split(',').map((s) => s.trim()).filter(Boolean));
+                if (current.has(tipo)) current.delete(tipo);
+                else current.add(tipo);
+                return { ...p, minicustosDesativadosCsv: Array.from(current).join(',') };
+            });
+        };
+        const toggleDia = (dia: string) => {
+            setPlanejamento360((p) => {
+                const current = new Set(p.diasAtendimento);
+                if (current.has(dia)) current.delete(dia);
+                else current.add(dia);
+                return { ...p, diasAtendimento: Array.from(current) };
+            });
+        };
+
         return (
-            <div className="min-h-screen bg-background px-4 py-12">
+            <div className="min-h-screen bg-background px-4 py-8">
                 <div className="mx-auto max-w-6xl">
-                    <div className="mb-8 flex items-center justify-between">
+                    {/* ── Header ── */}
+                    <div className="mb-6 flex items-center justify-between">
                         <div>
-                            <h1 className="text-3xl font-bold text-foreground">Proposta Final de Cuidados</h1>
-                            <p className="text-muted-foreground">Orcamento unificado, editavel e pronto para envio.</p>
+                            <h1 className="text-2xl font-bold text-foreground">Proposta de Cuidados</h1>
+                            <p className="text-sm text-muted-foreground">
+                                {selectedPatient?.nome || 'Paciente'} — {complexidadeResumoAtiva} / {tipoProfissionalResumoAtivo}
+                            </p>
                         </div>
                         <div className="text-right">
-                            <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Investimento do periodo</div>
-                            <div className="text-4xl font-black text-secondary-600">{formatCurrency(totalFinal)}</div>
+                            <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Investimento</div>
+                            <div className="text-3xl font-black text-secondary-600">{formatCurrency(totalFinal)}</div>
                             <div className="text-xs text-muted-foreground">
-                                Equivalente mensal: {formatCurrency((totalFinal / Math.max(1, selectedScenarioDays)) * 30)}
+                                {selectedScenarioDays} dias · {selectedScenarioHours}h · Mensal: {formatCurrency((totalFinal / Math.max(1, selectedScenarioDays)) * 30)}
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid gap-8 lg:grid-cols-3">
+                    <div className="grid gap-6 lg:grid-cols-3">
+                        {/* ════════════════ LEFT COLUMN ════════════════ */}
                         <div className="space-y-6 lg:col-span-2">
-                            <div className="rounded-xl border border-border bg-card p-8 shadow-sm">
-                                <h3 className="mb-6 border-b pb-4 font-bold text-foreground">Cenarios de Orcamento (ultima etapa da avaliacao)</h3>
-                                <div className="grid gap-4 md:grid-cols-3">
+
+                            {/* ── SECTION 1: Planejamento do Cuidado ── */}
+                            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                                <h3 className="mb-4 font-bold text-foreground">Como vai ser o cuidado?</h3>
+
+                                {/* Presets — visual cards */}
+                                <div className="mb-5 grid grid-cols-3 gap-2 md:grid-cols-6">
+                                    {PLANNING_PRESETS.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            type="button"
+                                            onClick={() => { applyPlanningPreset(preset.id); queueAutoRecalculate(); }}
+                                            className="rounded-lg border-2 border-border px-2 py-3 text-center text-xs font-semibold text-foreground transition hover:border-primary hover:bg-primary/5 active:scale-95"
+                                        >
+                                            {preset.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Summary banner */}
+                                <div className="mb-5 flex items-center justify-between rounded-lg bg-primary/5 px-4 py-3">
+                                    <div className="text-sm font-medium text-foreground">
+                                        <span className="font-bold text-primary">{selectedScenarioDays}</span> dia(s) de cuidado ·{' '}
+                                        <span className="font-bold text-primary">{selectedScenarioHours}h</span> totais
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => recalculateScenarios(false)}
+                                        className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white transition hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
+                                        disabled={loadingOrcamento}
+                                    >
+                                        {loadingOrcamento ? 'Calculando...' : 'Recalcular'}
+                                    </button>
+                                </div>
+
+                                {/* Essential fields */}
+                                <div className="grid gap-4 md:grid-cols-4">
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Inicio</label>
+                                        <input type="date" value={planejamento360.dataInicioCuidado} onChange={(e) => setPlanejamento360((p) => ({ ...p, dataInicioCuidado: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Fim</label>
+                                        <input type="date" value={planejamento360.dataFimCuidado} onChange={(e) => setPlanejamento360((p) => ({ ...p, dataFimCuidado: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Horas/dia</label>
+                                        <input type="number" min={1} max={24} value={planejamento360.horasCuidadoDia} onChange={(e) => { setPlanejamento360((p) => ({ ...p, horasCuidadoDia: Math.min(24, Math.max(1, num(e.target.value, p.horasCuidadoDia))) })); queueAutoRecalculate(); }} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Modelo</label>
+                                        <select
+                                            value={planejamento360.modeloEscala}
+                                            onChange={(e) => {
+                                                setPlanejamento360((p) => {
+                                                    const nextModel = e.target.value as Planejamento360['modeloEscala'];
+                                                    if (nextModel === 'CONTINUO') return { ...p, modeloEscala: nextModel, recurrenceType: 'PACKAGE', diasAtendimento: ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'] };
+                                                    if (nextModel === 'BLOCO_DIAS') return { ...p, modeloEscala: nextModel, recurrenceType: 'PACKAGE', diasAtendimento: [], periodicidade: 'DIARIO' };
+                                                    return { ...p, modeloEscala: nextModel, recurrenceType: p.periodicidade === 'QUINZENAL' ? 'BIWEEKLY' : p.periodicidade === 'MENSAL' ? 'MONTHLY' : 'WEEKLY', diasAtendimento: p.diasAtendimento.length ? p.diasAtendimento : ['seg', 'ter', 'qua', 'qui', 'sex'] };
+                                                });
+                                                queueAutoRecalculate();
+                                            }}
+                                            className="w-full rounded-lg border px-3 py-2 text-sm"
+                                        >
+                                            <option value="DIAS_ESPECIFICOS">Dias especificos</option>
+                                            <option value="CONTINUO">Continuo</option>
+                                            <option value="BLOCO_DIAS">Bloco fechado</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Days of week toggles */}
+                                {planejamento360.modeloEscala === 'DIAS_ESPECIFICOS' && (
+                                    <div className="mt-4">
+                                        <label className="mb-2 block text-xs font-medium text-foreground">Dias da semana</label>
+                                        <div className="flex gap-1">
+                                            {WEEKDAYS.map((d) => {
+                                                const active = planejamento360.diasAtendimento.includes(d.key);
+                                                return (
+                                                    <button
+                                                        key={d.key}
+                                                        type="button"
+                                                        onClick={() => toggleDia(d.key)}
+                                                        className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold transition ${active ? 'bg-primary text-white' : 'border border-border bg-card text-muted-foreground hover:border-primary'}`}
+                                                    >
+                                                        {d.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Block days count */}
+                                {planejamento360.modeloEscala === 'BLOCO_DIAS' && (
+                                    <div className="mt-4 max-w-[200px]">
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Quantidade de dias</label>
+                                        <input type="number" min={1} value={planejamento360.quantidadeDiasCuidado} onChange={(e) => { setPlanejamento360((p) => ({ ...p, quantidadeDiasCuidado: Math.max(1, num(e.target.value, p.quantidadeDiasCuidado)) })); queueAutoRecalculate(); }} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                    </div>
+                                )}
+
+                                {/* Turno quick select */}
+                                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Turno</label>
+                                        <div className="flex gap-1">
+                                            {([['DIURNO', 'Diurno'], ['NOTURNO', 'Noturno'], ['24H', '24h']] as const).map(([val, lbl]) => (
+                                                <button
+                                                    key={val}
+                                                    type="button"
+                                                    onClick={() => setPlanejamento360((p) => ({ ...p, turno: val }))}
+                                                    className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${planejamento360.turno === val ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary'}`}
+                                                >
+                                                    {lbl}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Pacientes</label>
+                                        <input type="number" min={1} max={6} value={planejamento360.quantidadePacientes} onChange={(e) => { setPlanejamento360((p) => ({ ...p, quantidadePacientes: Math.max(1, Math.min(6, num(e.target.value, p.quantidadePacientes))) })); queueAutoRecalculate(); }} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Feriados no periodo</label>
+                                        <input type="number" min={0} value={planejamento360.feriadosNoPeriodo} onChange={(e) => setPlanejamento360((p) => ({ ...p, feriadosNoPeriodo: Math.max(0, num(e.target.value, p.feriadosNoPeriodo)) }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                    </div>
+                                </div>
+
+                                {/* Profissional + Complexidade */}
+                                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Profissional</label>
+                                        <select value={planoResumoOverrides.tipoProfissional || 'AUTO'} onChange={(e) => applyResumoTipoProfissional(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm">
+                                            <option value="AUTO">AUTO ({tipoProfissionalResumoAtivo})</option>
+                                            <option value="CUIDADOR">Cuidador</option>
+                                            <option value="AUXILIAR_ENF">Auxiliar Enf.</option>
+                                            <option value="TECNICO_ENF">Tecnico Enf.</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Complexidade</label>
+                                        <select value={planoResumoOverrides.complexidade || 'AUTO'} onChange={(e) => applyResumoComplexidade(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm">
+                                            <option value="AUTO">AUTO ({inferirComplexidade()})</option>
+                                            <option value="BAIXA">Baixa</option>
+                                            <option value="MEDIA">Media</option>
+                                            <option value="ALTA">Alta</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Resumo matematico */}
+                                <div className="mt-4 rounded-lg border border-border bg-surface-subtle/30 p-3 text-xs text-muted-foreground">
+                                    <p>{planejamentoCalculo.recorrenciaDescricao}</p>
+                                    <p>Periodo: {planejamentoCalculo.inicioISO} a {planejamentoCalculo.fimISO} ({planejamentoCalculo.diasCorridos} dia(s) corridos)</p>
+                                </div>
+                            </div>
+
+                            {/* ── SECTION 2: Cenarios e Preco ── */}
+                            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                                <h3 className="mb-4 font-bold text-foreground">Cenarios de preco</h3>
+                                <div className="grid gap-3 md:grid-cols-3">
                                     {(['economico', 'recomendado', 'premium'] as ScenarioKey[]).map((key) => {
                                         const scenario = orcamentos?.[key];
                                         const selected = orcamentos?.selecionado === key;
@@ -1162,693 +1426,303 @@ export default function NewEvaluationPage() {
                                                 key={key}
                                                 type="button"
                                                 onClick={() => selectScenario(key)}
-                                                className={`rounded-xl border-2 p-4 text-left transition ${selected ? 'border-emerald-500 bg-secondary-400/10' : 'border-border bg-card hover:border-border-hover'
-                                                    }`}
+                                                className={`rounded-xl border-2 p-4 text-left transition ${selected ? 'border-emerald-500 bg-secondary-400/10' : 'border-border bg-card hover:border-border-hover'}`}
                                             >
                                                 <p className="text-xs font-bold uppercase tracking-wide text-foreground">
                                                     {scenario?.label || key} {selected ? 'OK' : ''}
                                                 </p>
-                                                <p className="mt-2 text-xl font-bold text-foreground">
+                                                <p className="mt-1 text-xl font-bold text-foreground">
                                                     {formatCurrency(num(scenario?.data?.total, 0))}
                                                     <span className="ml-1 text-xs font-normal text-muted-foreground">/periodo</span>
                                                 </p>
-                                                <p className="text-xs text-muted-foreground">
-                                                    Mensal eq.: {formatCurrency(cardMonthly)}
-                                                </p>
-                                                <p className="text-xs text-muted-foreground">
-                                                    {cardDays} dia(s) de cuidado • {scenario?.horasDiarias || 0}h/dia
-                                                </p>
-                                                <p className="mt-1 text-xs text-muted-foreground">{scenario?.tipoProfissional || '-'}</p>
-                                                <p className="text-xs text-muted-foreground">{scenario?.complexidade || '-'}</p>
-                                                {scenario?.meta?.configVersionId ? (
-                                                    <p className="mt-1 text-[10px] text-muted-foreground">
-                                                        cfg: {scenario.meta.configVersionId}
-                                                    </p>
-                                                ) : null}
+                                                <p className="text-xs text-muted-foreground">Mensal: {formatCurrency(cardMonthly)}</p>
+                                                <p className="text-xs text-muted-foreground">{cardDays}d · {scenario?.horasDiarias || 0}h/dia · {scenario?.tipoProfissional || '-'}</p>
                                             </button>
                                         );
                                     })}
                                 </div>
-                                {loadingOrcamento ? <p className="mt-3 text-sm text-primary">Calculando cenarios...</p> : null}
-                                {orcamentoError ? <p className="mt-3 text-sm text-error-600">{orcamentoError}</p> : null}
+                                {loadingOrcamento && <p className="mt-3 text-sm text-primary">Calculando cenarios...</p>}
+                                {orcamentoError && <p className="mt-3 text-sm text-error-600">{orcamentoError}</p>}
+
+                                {/* Breakdown */}
+                                {(() => {
+                                    const sel = orcamentos?.selecionado;
+                                    const scenario = sel ? orcamentos?.[sel] : undefined;
+                                    const pb = scenario?.meta?.pricingBreakdown as Record<string, unknown> | undefined;
+                                    const bd = (pb?.breakdown ?? pb) as Record<string, unknown> | undefined;
+                                    const lines = calculatorBreakdownToLines(bd && typeof bd === 'object' && 'custo_profissional' in bd ? bd : undefined);
+                                    if (!lines.length) return null;
+                                    return (
+                                        <div className="mt-4">
+                                            <BreakdownTable lines={lines} title={`Detalhamento — ${scenario?.label || sel}`} />
+                                        </div>
+                                    );
+                                })()}
                             </div>
 
-                            <div className="rounded-xl border border-border bg-card p-8 shadow-sm">
-                                <h3 className="mb-6 border-b pb-4 font-bold text-foreground">Configuracao Comercial</h3>
-                                <div className="mb-6 grid gap-6 md:grid-cols-2">
+                            {/* ── SECTION 3: Comercial ── */}
+                            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                                <h3 className="mb-4 font-bold text-foreground">Configuracao comercial</h3>
+
+                                <div className="grid gap-4 md:grid-cols-3">
                                     <div>
-                                        <label className="mb-2 block text-sm font-bold text-foreground">Valor do periodo (R$)</label>
-                                        <input
-                                            type="number"
-                                            value={proposal.valorTotal}
-                                            onChange={(e) => setProposal((prev) => ({ ...prev, valorTotal: num(e.target.value, 0) }))}
-                                            className="w-full rounded-lg border p-3 text-lg font-bold outline-none focus:ring-2 focus:ring-ring"
-                                        />
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Valor do periodo (R$)</label>
+                                        <input type="number" value={proposal.valorTotal} onChange={(e) => setProposal((prev) => ({ ...prev, valorTotal: num(e.target.value, 0) }))} className="w-full rounded-lg border p-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-ring" />
                                     </div>
                                     <div>
-                                        <label className="mb-2 block text-sm font-bold text-foreground">Data vencimento</label>
-                                        <input
-                                            type="date"
-                                            value={proposal.vencimento}
-                                            onChange={(e) => setProposal((prev) => ({ ...prev, vencimento: e.target.value }))}
-                                            className="w-full rounded-lg border p-3 text-lg outline-none focus:ring-2 focus:ring-ring"
-                                        />
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Vencimento</label>
+                                        <input type="date" value={proposal.vencimento} onChange={(e) => setProposal((prev) => ({ ...prev, vencimento: e.target.value }))} className="w-full rounded-lg border p-2.5 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Acrescimos (R$)</label>
+                                        <input type="number" value={proposal.acrescimos} onChange={(e) => setProposal((prev) => ({ ...prev, acrescimos: num(e.target.value, 0) }))} className="w-full rounded-lg border p-2.5 text-sm" placeholder="0" />
                                     </div>
                                 </div>
 
-                                <div className="mb-6 grid gap-6 md:grid-cols-2">
+                                {/* Descontos */}
+                                <div className="mt-4 grid gap-4 md:grid-cols-3">
                                     <div>
-                                        <label className="mb-2 block text-sm font-bold text-foreground">Desconto (%)</label>
-                                        <input
-                                            type="number"
-                                            value={proposal.descontoPercent}
-                                            onChange={(e) => setProposal((prev) => ({ ...prev, descontoPercent: Math.max(0, Math.min(100, num(e.target.value, 0))) }))}
-                                            className="w-full rounded-lg border p-3 text-foreground"
-                                            placeholder="0,00"
-                                            min={0}
-                                            max={100}
-                                            step="0.01"
-                                        />
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Desconto (%)</label>
+                                        <input type="number" value={proposal.descontoPercent} onChange={(e) => setProposal((prev) => ({ ...prev, descontoPercent: Math.max(0, Math.min(100, num(e.target.value, 0))) }))} className="w-full rounded-lg border p-2.5 text-sm" min={0} max={100} step="0.01" />
                                     </div>
                                     <div>
-                                        <label className="mb-2 block text-sm font-bold text-foreground">Descontos (R$)</label>
-                                        <input
-                                            type="number"
-                                            value={proposal.descontos}
-                                            onChange={(e) => setProposal((prev) => ({ ...prev, descontos: num(e.target.value, 0) }))}
-                                            className="w-full rounded-lg border p-3 text-foreground"
-                                            placeholder="0,00"
-                                        />
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Desconto (R$)</label>
+                                        <input type="number" value={proposal.descontos} onChange={(e) => setProposal((prev) => ({ ...prev, descontos: num(e.target.value, 0) }))} className="w-full rounded-lg border p-2.5 text-sm" />
                                     </div>
                                     <div>
-                                        <label className="mb-2 block text-sm font-bold text-foreground">Acrescimos (R$)</label>
-                                        <input
-                                            type="number"
-                                            value={proposal.acrescimos}
-                                            onChange={(e) => setProposal((prev) => ({ ...prev, acrescimos: num(e.target.value, 0) }))}
-                                            className="w-full rounded-lg border p-3 text-foreground"
-                                            placeholder="0,00"
-                                        />
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Desconto engine (%)</label>
+                                        <input type="number" min={0} max={100} value={planejamento360.descontoManualPercent} onChange={(e) => setPlanejamento360((p) => ({ ...p, descontoManualPercent: Math.max(0, Math.min(100, num(e.target.value, p.descontoManualPercent))) }))} className="w-full rounded-lg border p-2.5 text-sm" />
                                     </div>
                                 </div>
 
-                                <div className="mb-6">
-                                    <label className="mb-2 block text-sm font-bold text-foreground">Metodos de pagamento</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {[
-                                            { key: 'PIX', label: 'PIX' },
-                                            { key: 'CARTAO DE CREDITO', label: 'Cartao de credito' },
-                                        ].map((method) => {
-                                            const selected = proposal.metodosPagamento.includes(method.key);
+                                {/* Pagamento */}
+                                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="mb-2 block text-xs font-medium text-foreground">Metodo</label>
+                                        <div className="flex gap-2">
+                                            {[{ key: 'PIX', label: 'PIX' }, { key: 'CARTAO DE CREDITO', label: 'Cartao' }].map((method) => {
+                                                const sel = proposal.metodosPagamento.includes(method.key);
+                                                return (
+                                                    <button key={method.key} type="button" onClick={() => setProposal((prev) => { const cur = prev.metodosPagamento; const next = sel ? cur.filter((i) => i !== method.key) : [...cur, method.key]; return { ...prev, metodosPagamento: next.length ? next : ['PIX'] }; })} className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${sel ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-background'}`}>
+                                                        {method.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="mb-2 block text-xs font-medium text-foreground">Parcelas</label>
+                                        <div className="flex gap-1">
+                                            {[1, 2, 3, 4].map((p) => (
+                                                <button key={p} type="button" onClick={() => setProposal((prev) => ({ ...prev, parcelas: p, opcoesParcelamento: ['1x sem juros', '2x sem juros', '3x sem juros', '4x sem juros'], valorParcela: (num(prev.valorTotal) - num(prev.entrada)) / p }))} className={`flex-1 rounded-lg border py-2 text-xs font-medium transition ${proposal.parcelas === p ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-background'}`}>
+                                                    {p}x
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Margem + Imposto */}
+                                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Margem desejada (%)</label>
+                                        <input type="number" min={0} value={planejamento360.margemDesejadaPercent} onChange={(e) => setPlanejamento360((p) => ({ ...p, margemDesejadaPercent: Math.max(0, num(e.target.value, p.margemDesejadaPercent)) }))} className="w-full rounded-lg border p-2.5 text-sm" />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Imposto (%)</label>
+                                        <input type="number" min={0} value={planejamento360.impostoPercent} onChange={(e) => setPlanejamento360((p) => ({ ...p, impostoPercent: Math.max(0, num(e.target.value, p.impostoPercent)) }))} className="w-full rounded-lg border p-2.5 text-sm" />
+                                    </div>
+                                </div>
+
+                                {/* Minicustos toggles */}
+                                <div className="mt-4">
+                                    <label className="mb-2 block text-xs font-medium text-foreground">Minicustos operacionais</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {MINICUSTO_OPTIONS.map((mc) => {
+                                            const active = !disabledMinicustos.has(mc.tipo);
                                             return (
-                                                <button
-                                                    key={method.key}
-                                                    type="button"
-                                                    onClick={() => setProposal((prev) => {
-                                                        const current = prev.metodosPagamento;
-                                                        const next = selected
-                                                            ? current.filter((item) => item !== method.key)
-                                                            : [...current, method.key];
-                                                        return {
-                                                            ...prev,
-                                                            metodosPagamento: next.length ? next : ['PIX'],
-                                                        };
-                                                    })}
-                                                    className={`rounded border px-3 py-2 text-sm font-medium transition ${selected ? 'border-blue-600 bg-primary text-primary-foreground' : 'hover:bg-background'
-                                                        }`}
-                                                >
-                                                    {method.label}
+                                                <button key={mc.tipo} type="button" onClick={() => toggleMinicusto(mc.tipo)} className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${active ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground line-through opacity-60 hover:opacity-100'}`}>
+                                                    {mc.nome}
                                                 </button>
                                             );
                                         })}
                                     </div>
                                 </div>
-
-                                <div>
-                                    <label className="mb-2 block text-sm font-bold text-foreground">Forma de pagamento</label>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {[1, 2, 3, 4].map((parcelas) => (
-                                            <button
-                                                key={parcelas}
-                                                type="button"
-                                                onClick={() => setProposal((prev) => ({
-                                                    ...prev,
-                                                    parcelas,
-                                                    opcoesParcelamento: ['1x sem juros', '2x sem juros', '3x sem juros', '4x sem juros'],
-                                                    valorParcela: (num(prev.valorTotal) - num(prev.entrada)) / parcelas,
-                                                }))}
-                                                className={`rounded border py-2 font-medium transition ${proposal.parcelas === parcelas ? 'border-blue-600 bg-primary text-primary-foreground' : 'hover:bg-background'}`}
-                                            >
-                                                {parcelas}x sem juros
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
                             </div>
 
-                            <div className="rounded-xl border border-border bg-card p-8 shadow-sm">
-                                <h3 className="mb-4 font-bold text-foreground">Planejamento 360 (pre-proposta)</h3>
-                                <p className="mb-4 text-xs text-muted-foreground">
-                                    Estime cenarios com recorrencia real: 1 dia, 1 dia 24h, dias intercalados e cobertura continua.
-                                </p>
-                                <div className="mb-4 flex flex-wrap gap-2">
-                                    {PLANNING_PRESETS.map((preset) => (
-                                        <button
-                                            key={preset.id}
-                                            type="button"
-                                            onClick={() => applyPlanningPreset(preset.id)}
-                                            className="rounded-lg border border-border-hover px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-background"
-                                        >
-                                            {preset.label}
-                                        </button>
-                                    ))}
-                                    <button
-                                        type="button"
-                                        onClick={() => recalculateScenarios(false)}
-                                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-primary disabled:cursor-wait disabled:opacity-60"
-                                        disabled={loadingOrcamento}
-                                    >
-                                        {loadingOrcamento ? 'Recalculando...' : 'Recalcular com planejamento'}
-                                    </button>
-                                </div>
-                                <div className="grid gap-3 md:grid-cols-3">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Inicio do cuidado</label>
-                                        <input type="date" value={planejamento360.dataInicioCuidado} onChange={(e) => setPlanejamento360((p) => ({ ...p, dataInicioCuidado: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                            {/* ── SECTION 4: Avancado (collapsed) ── */}
+                            <div className="rounded-xl border border-border bg-card shadow-sm">
+                                <button type="button" onClick={() => setAdvancedOpen(!advancedOpen)} className="flex w-full items-center justify-between p-4 text-sm font-semibold text-foreground hover:bg-surface-subtle/30 transition">
+                                    <span>Ajustes avancados</span>
+                                    {advancedOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                </button>
+                                {advancedOpen && (
+                                    <div className="border-t border-border p-6 space-y-4">
+                                        <div className="grid gap-4 md:grid-cols-3">
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Periodicidade</label>
+                                                <select value={planejamento360.periodicidade} onChange={(e) => { const periodicidade = e.target.value as Planejamento360['periodicidade']; const recurrenceType: RecurrenceType = periodicidade === 'QUINZENAL' ? 'BIWEEKLY' : periodicidade === 'MENSAL' ? 'MONTHLY' : periodicidade === 'DIARIO' ? (planejamento360.modeloEscala === 'BLOCO_DIAS' ? 'PACKAGE' : 'WEEKLY') : 'WEEKLY'; setPlanejamento360((p) => ({ ...p, periodicidade, recurrenceType })); }} className="w-full rounded-lg border px-3 py-2 text-sm">
+                                                    <option value="DIARIO">Diario</option>
+                                                    <option value="SEMANAL">Semanal</option>
+                                                    <option value="QUINZENAL">Quinzenal</option>
+                                                    <option value="MENSAL">Mensal</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Tipo de recorrencia</label>
+                                                <select value={planejamento360.recurrenceType} onChange={(e) => setPlanejamento360((p) => ({ ...p, recurrenceType: e.target.value as RecurrenceType }))} className="w-full rounded-lg border px-3 py-2 text-sm">
+                                                    <option value="NONE">Unica</option>
+                                                    <option value="WEEKLY">Semanal</option>
+                                                    <option value="BIWEEKLY">Quinzenal</option>
+                                                    <option value="MONTHLY">Mensal</option>
+                                                    <option value="CUSTOM_DATES">Datas especificas</option>
+                                                    <option value="PACKAGE">Pacote de dias</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Intervalo</label>
+                                                <input type="number" min={1} value={planejamento360.intervaloRecorrencia} onChange={(e) => setPlanejamento360((p) => ({ ...p, intervaloRecorrencia: Math.max(1, num(e.target.value, p.intervaloRecorrencia)) }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                            </div>
+                                        </div>
+                                        <div className="grid gap-4 md:grid-cols-3">
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Semanas</label>
+                                                <input type="number" min={1} value={planejamento360.semanasPlanejadas} onChange={(e) => setPlanejamento360((p) => ({ ...p, semanasPlanejadas: Math.max(1, num(e.target.value, p.semanasPlanejadas)) }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                            </div>
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Meses</label>
+                                                <input type="number" min={1} value={planejamento360.mesesPlanejados} onChange={(e) => setPlanejamento360((p) => ({ ...p, mesesPlanejados: Math.max(1, num(e.target.value, p.mesesPlanejados)) }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                            </div>
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Acrescimo tecnico (%)</label>
+                                                <input type="number" min={0} step="0.1" value={planejamento360.adicionalPercentual} onChange={(e) => setPlanejamento360((p) => ({ ...p, adicionalPercentual: Math.max(0, num(e.target.value, p.adicionalPercentual)) }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                            </div>
+                                        </div>
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Horario inicio</label>
+                                                <input type="time" value={planejamento360.horarioInicio} onChange={(e) => setPlanejamento360((p) => ({ ...p, horarioInicio: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                            </div>
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Horario fim</label>
+                                                <input type="time" value={planejamento360.horarioFim} onChange={(e) => setPlanejamento360((p) => ({ ...p, horarioFim: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
+                                            </div>
+                                        </div>
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Feriados (datas)</label>
+                                                <input value={planejamento360.feriadosDatasCsv} onChange={(e) => setPlanejamento360((p) => ({ ...p, feriadosDatasCsv: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" placeholder="2026-03-01,2026-03-15" />
+                                            </div>
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Tempo de cuidado (descricao)</label>
+                                                <input value={planejamento360.tempoCuidadoDescricao} onChange={(e) => setPlanejamento360((p) => ({ ...p, tempoCuidadoDescricao: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" placeholder="12h/dia por 3 meses" />
+                                            </div>
+                                        </div>
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Datas excluidas</label>
+                                                <input value={planejamento360.datasExcluidasCsv} onChange={(e) => setPlanejamento360((p) => ({ ...p, datasExcluidasCsv: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" placeholder="2026-03-05,2026-03-12" />
+                                            </div>
+                                            <div>
+                                                <label className="mb-1 block text-xs font-medium text-foreground">Datas incluidas</label>
+                                                <input value={planejamento360.datasIncluidasCsv} onChange={(e) => setPlanejamento360((p) => ({ ...p, datasIncluidasCsv: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" placeholder="2026-03-07,2026-03-14" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="mb-1 block text-xs font-medium text-foreground">Resumo de alocacao/escala</label>
+                                            <textarea value={planejamento360.alocacaoResumo} onChange={(e) => setPlanejamento360((p) => ({ ...p, alocacaoResumo: e.target.value }))} className="h-16 w-full rounded-lg border px-3 py-2 text-sm" placeholder="Escala, cobertura, troca de profissionais..." />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Fim do cuidado</label>
-                                        <input type="date" value={planejamento360.dataFimCuidado} onChange={(e) => setPlanejamento360((p) => ({ ...p, dataFimCuidado: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Horas por dia</label>
-                                        <input type="number" min={1} max={24} value={planejamento360.horasCuidadoDia} onChange={(e) => setPlanejamento360((p) => ({ ...p, horasCuidadoDia: Math.min(24, Math.max(1, num(e.target.value, p.horasCuidadoDia))) }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
-                                    </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Modelo de escala</label>
-                                        <select
-                                            value={planejamento360.modeloEscala}
-                                            onChange={(e) => setPlanejamento360((p) => {
-                                                const nextModel = e.target.value as Planejamento360['modeloEscala'];
-                                                if (nextModel === 'CONTINUO') {
-                                                    return {
-                                                        ...p,
-                                                        modeloEscala: nextModel,
-                                                        recurrenceType: 'PACKAGE',
-                                                        diasAtendimento: ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'],
-                                                    };
-                                                }
-                                                if (nextModel === 'BLOCO_DIAS') {
-                                                    return {
-                                                        ...p,
-                                                        modeloEscala: nextModel,
-                                                        recurrenceType: 'PACKAGE',
-                                                        diasAtendimento: [],
-                                                        periodicidade: 'DIARIO',
-                                                    };
-                                                }
-                                                return {
-                                                    ...p,
-                                                    modeloEscala: nextModel,
-                                                    recurrenceType: p.periodicidade === 'QUINZENAL'
-                                                        ? 'BIWEEKLY'
-                                                        : p.periodicidade === 'MENSAL'
-                                                            ? 'MONTHLY'
-                                                            : 'WEEKLY',
-                                                    diasAtendimento: p.diasAtendimento.length ? p.diasAtendimento : ['seg', 'ter', 'qua', 'qui', 'sex'],
-                                                };
-                                            })}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        >
-                                            <option value="DIAS_ESPECIFICOS">Dias especificos</option>
-                                            <option value="CONTINUO">Continuo (todos os dias)</option>
-                                            <option value="BLOCO_DIAS">Bloco fechado de dias</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Qtd dias de cuidado</label>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            value={planejamento360.quantidadeDiasCuidado}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, quantidadeDiasCuidado: Math.max(1, num(e.target.value, p.quantidadeDiasCuidado)) }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                            disabled={planejamento360.modeloEscala !== 'BLOCO_DIAS'}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Pacientes atendidos</label>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            max={6}
-                                            value={planejamento360.quantidadePacientes}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, quantidadePacientes: Math.max(1, Math.min(6, num(e.target.value, p.quantidadePacientes))) }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Periodicidade</label>
-                                        <select
-                                            value={planejamento360.periodicidade}
-                                            onChange={(e) => setPlanejamento360((p) => {
-                                                const periodicidade = e.target.value as Planejamento360['periodicidade'];
-                                                const recurrenceType: RecurrenceType = periodicidade === 'QUINZENAL'
-                                                    ? 'BIWEEKLY'
-                                                    : periodicidade === 'MENSAL'
-                                                        ? 'MONTHLY'
-                                                        : periodicidade === 'DIARIO'
-                                                            ? (p.modeloEscala === 'BLOCO_DIAS' ? 'PACKAGE' : 'WEEKLY')
-                                                            : 'WEEKLY';
-                                                return {
-                                                    ...p,
-                                                    periodicidade,
-                                                    recurrenceType,
-                                                };
-                                            })}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        >
-                                            <option value="DIARIO">Diario</option>
-                                            <option value="SEMANAL">Semanal</option>
-                                            <option value="QUINZENAL">Quinzenal</option>
-                                            <option value="MENSAL">Mensal</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Semanas</label>
-                                        <input type="number" min={1} value={planejamento360.semanasPlanejadas} onChange={(e) => setPlanejamento360((p) => ({ ...p, semanasPlanejadas: Math.max(1, num(e.target.value, p.semanasPlanejadas)) }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Meses</label>
-                                        <input type="number" min={1} value={planejamento360.mesesPlanejados} onChange={(e) => setPlanejamento360((p) => ({ ...p, mesesPlanejados: Math.max(1, num(e.target.value, p.mesesPlanejados)) }))} className="w-full rounded-lg border px-3 py-2 text-sm" />
-                                    </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Tipo de recorrencia</label>
-                                        <select
-                                            value={planejamento360.recurrenceType}
-                                            onChange={(e) => setPlanejamento360((p) => ({
-                                                ...p,
-                                                recurrenceType: e.target.value as RecurrenceType,
-                                            }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        >
-                                            <option value="NONE">Unica</option>
-                                            <option value="WEEKLY">Semanal</option>
-                                            <option value="BIWEEKLY">Quinzenal</option>
-                                            <option value="MONTHLY">Mensal</option>
-                                            <option value="CUSTOM_DATES">Datas especificas</option>
-                                            <option value="PACKAGE">Pacote de dias</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Intervalo</label>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            value={planejamento360.intervaloRecorrencia}
-                                            onChange={(e) => setPlanejamento360((p) => ({
-                                                ...p,
-                                                intervaloRecorrencia: Math.max(1, num(e.target.value, p.intervaloRecorrencia)),
-                                            }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Turno</label>
-                                        <select
-                                            value={planejamento360.turno}
-                                            onChange={(e) => setPlanejamento360((p) => ({
-                                                ...p,
-                                                turno: e.target.value as Planejamento360['turno'],
-                                            }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        >
-                                            <option value="DIURNO">Diurno</option>
-                                            <option value="NOTURNO">Noturno</option>
-                                            <option value="24H">24h</option>
-                                            <option value="CUSTOM">Custom</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Horario inicio</label>
-                                        <input
-                                            type="time"
-                                            value={planejamento360.horarioInicio}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, horarioInicio: e.target.value }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Horario fim</label>
-                                        <input
-                                            type="time"
-                                            value={planejamento360.horarioFim}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, horarioFim: e.target.value }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        />
-                                    </div>
-                                    <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground">
-                                        <p className="font-semibold text-foreground">Cobertura calculada</p>
-                                        <p>{selectedScenarioDays} dia(s) de cuidado</p>
-                                        <p>{selectedScenarioHours}h totais</p>
-                                        {selectedScenario?.meta?.configVersionId ? (
-                                            <p className="mt-1 text-[11px] text-muted-foreground">Config: {selectedScenario.meta.configVersionId}</p>
-                                        ) : null}
-                                        {selectedScenario?.meta?.inputHash ? (
-                                            <p className="truncate text-[11px] text-muted-foreground">Hash: {selectedScenario.meta.inputHash}</p>
-                                        ) : null}
-                                    </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Feriados no periodo</label>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            value={planejamento360.feriadosNoPeriodo}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, feriadosNoPeriodo: Math.max(0, num(e.target.value, p.feriadosNoPeriodo)) }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Acréscimo tecnico (%)</label>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            step="0.1"
-                                            value={planejamento360.adicionalPercentual}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, adicionalPercentual: Math.max(0, num(e.target.value, p.adicionalPercentual)) }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                            placeholder="Ex.: 10"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Feriados (datas csv)</label>
-                                        <input
-                                            value={planejamento360.feriadosDatasCsv}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, feriadosDatasCsv: e.target.value }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                            placeholder="2026-03-01,2026-03-15"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Dias de atendimento (csv)</label>
-                                        <input
-                                            value={planejamento360.diasAtendimento.join(',')}
-                                            onChange={(e) => setPlanejamento360((p) => ({
-                                                ...p,
-                                                diasAtendimento: e.target.value.split(',').map((item) => item.trim()).filter(Boolean),
-                                            }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                            placeholder={planejamento360.modeloEscala === 'CONTINUO' ? 'todos os dias' : 'seg,ter,qua,qui,sex'}
-                                            disabled={planejamento360.modeloEscala === 'CONTINUO'}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Tempo de cuidado</label>
-                                        <input value={planejamento360.tempoCuidadoDescricao} onChange={(e) => setPlanejamento360((p) => ({ ...p, tempoCuidadoDescricao: e.target.value }))} className="w-full rounded-lg border px-3 py-2 text-sm" placeholder="12h/dia por 3 meses" />
-                                    </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Datas excluidas (csv)</label>
-                                        <input
-                                            value={planejamento360.datasExcluidasCsv}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, datasExcluidasCsv: e.target.value }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                            placeholder="2026-03-05,2026-03-12"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Datas incluidas (csv)</label>
-                                        <input
-                                            value={planejamento360.datasIncluidasCsv}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, datasIncluidasCsv: e.target.value }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                            placeholder="2026-03-07,2026-03-14"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Margem desejada (%)</label>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            value={planejamento360.margemDesejadaPercent}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, margemDesejadaPercent: Math.max(0, num(e.target.value, p.margemDesejadaPercent)) }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Imposto (%)</label>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            value={planejamento360.impostoPercent}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, impostoPercent: Math.max(0, num(e.target.value, p.impostoPercent)) }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-xs font-medium text-foreground">Desconto manual (%)</label>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            max={100}
-                                            value={planejamento360.descontoManualPercent}
-                                            onChange={(e) => setPlanejamento360((p) => ({ ...p, descontoManualPercent: Math.max(0, Math.min(100, num(e.target.value, p.descontoManualPercent))) }))}
-                                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="mt-3">
-                                    <label className="mb-1 block text-xs font-medium text-foreground">Minicustos desativados (csv)</label>
-                                    <input
-                                        value={planejamento360.minicustosDesativadosCsv}
-                                        onChange={(e) => setPlanejamento360((p) => ({ ...p, minicustosDesativadosCsv: e.target.value }))}
-                                        className="w-full rounded-lg border px-3 py-2 text-sm"
-                                        placeholder="RESERVA_TECNICA,VISITA_SUPERVISAO"
-                                    />
-                                </div>
-                                <div className="mt-3">
-                                    <label className="mb-1 block text-xs font-medium text-foreground">Resumo de alocacao/escala</label>
-                                    <textarea value={planejamento360.alocacaoResumo} onChange={(e) => setPlanejamento360((p) => ({ ...p, alocacaoResumo: e.target.value }))} className="h-20 w-full rounded-lg border px-3 py-2 text-sm" placeholder="Escala, cobertura, troca de profissionais..." />
-                                </div>
-                                <div className="mt-4 rounded-lg border border-primary-100 bg-info-50 p-3 text-xs text-primary">
-                                    <p><strong>Resumo matematico:</strong> {planejamentoCalculo.recorrenciaDescricao}</p>
-                                    <p>
-                                        Periodo: {planejamentoCalculo.inicioISO} a {planejamentoCalculo.fimISO} ({planejamentoCalculo.diasCorridos} dia(s) corridos)
-                                    </p>
-                                    <p>
-                                        Dias ativos: {selectedScenarioDays} • Horas totais: {selectedScenarioHours}
-                                    </p>
-                                    <p>
-                                        Custo por dia ativo: {formatCurrency(totalFinal / Math.max(1, selectedScenarioDays))} • Custo semanal eq.: {formatCurrency((totalFinal / Math.max(1, selectedScenarioDays)) * 7)}
-                                    </p>
-                                </div>
+                                )}
                             </div>
 
-                            <div className="rounded-xl border border-border bg-card p-8 shadow-sm">
-                                <h3 className="mb-6 border-b pb-4 font-bold text-foreground">Dados do contratante</h3>
-                                <div className="grid gap-6 md:grid-cols-2">
+                            {/* ── Dados do contratante ── */}
+                            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                                <h3 className="mb-4 font-bold text-foreground">Dados do contratante</h3>
+                                <div className="grid gap-4 md:grid-cols-2">
                                     <div>
-                                        <label className="mb-2 block text-sm font-bold text-foreground">Nome responsavel</label>
-                                        <input value={proposal.nome} onChange={(e) => setProposal((p) => ({ ...p, nome: e.target.value }))} className="w-full rounded-lg border bg-background p-3 transition focus:bg-card" />
+                                        <label className="mb-1 block text-xs font-medium text-foreground">Nome responsavel</label>
+                                        <input value={proposal.nome} onChange={(e) => setProposal((p) => ({ ...p, nome: e.target.value }))} className="w-full rounded-lg border bg-background p-2.5 text-sm transition focus:bg-card" />
                                     </div>
                                     <div>
-                                        <label className="mb-2 block text-sm font-bold text-foreground">WhatsApp / Email</label>
-                                        <input value={proposal.phone} onChange={(e) => setProposal((p) => ({ ...p, phone: e.target.value }))} className="w-full rounded-lg border bg-background p-3 transition focus:bg-card" />
+                                        <label className="mb-1 block text-xs font-medium text-foreground">WhatsApp / Email</label>
+                                        <input value={proposal.phone} onChange={(e) => setProposal((p) => ({ ...p, phone: e.target.value }))} className="w-full rounded-lg border bg-background p-2.5 text-sm transition focus:bg-card" />
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="space-y-6">
-                            <div className="rounded-xl bg-gradient-to-br from-gray-900 to-gray-800 p-6 text-white shadow-lg">
-                                <h3 className="mb-6 text-xs font-bold uppercase tracking-widest text-muted-foreground">Resumo do plano</h3>
-                                <div className="mb-8 space-y-4">
-                                    <div className="border-b border-gray-700 pb-2">
-                                        <span className="mb-1 block text-muted-foreground/50">Complexidade</span>
-                                        <select
-                                            value={planoResumoOverrides.complexidade || 'AUTO'}
-                                            onChange={(e) => applyResumoComplexidade(e.target.value)}
-                                            className="w-full rounded border border-gray-600 bg-neutral-900 px-2 py-1 text-sm font-bold text-white"
-                                        >
-                                            <option value="AUTO">AUTO ({inferirComplexidade()})</option>
-                                            <option value="BAIXA">BAIXA</option>
-                                            <option value="MEDIA">MEDIA</option>
-                                            <option value="ALTA">ALTA</option>
-                                        </select>
+                        {/* ════════════════ RIGHT COLUMN (sticky sidebar) ════════════════ */}
+                        <div className="space-y-4">
+                            <div className="sticky top-4 space-y-4">
+                                {/* Price summary */}
+                                <div className="rounded-xl bg-gradient-to-br from-gray-900 to-gray-800 p-5 text-white shadow-lg">
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-gray-400">Total bruto</span>
+                                            <span>{formatCurrency(num(proposal.valorTotal))}</span>
+                                        </div>
+                                        {num(proposal.descontoPercent) > 0 && (
+                                            <div className="flex justify-between text-sm text-emerald-400">
+                                                <span>Desconto</span>
+                                                <span>- {num(proposal.descontoPercent).toFixed(1)}%</span>
+                                            </div>
+                                        )}
+                                        {num(proposal.descontos) > 0 && (
+                                            <div className="flex justify-between text-sm text-emerald-400">
+                                                <span>Descontos</span>
+                                                <span>- {formatCurrency(num(proposal.descontos))}</span>
+                                            </div>
+                                        )}
+                                        {num(proposal.acrescimos) > 0 && (
+                                            <div className="flex justify-between text-sm text-amber-400">
+                                                <span>Acrescimos</span>
+                                                <span>+ {formatCurrency(num(proposal.acrescimos))}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between border-t border-gray-600 pt-2 text-xl font-bold">
+                                            <span>Total final</span>
+                                            <span>{formatCurrency(totalFinal)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs text-gray-500">
+                                            <span>Mensal eq.</span>
+                                            <span>{formatCurrency((totalFinal / Math.max(1, selectedScenarioDays)) * 30)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs text-gray-500">
+                                            <span>Semanal eq.</span>
+                                            <span>{formatCurrency((totalFinal / Math.max(1, selectedScenarioDays)) * 7)}</span>
+                                        </div>
+                                        {proposal.parcelas > 1 && (
+                                            <div className="flex justify-between text-xs text-gray-400 border-t border-gray-700 pt-1 mt-1">
+                                                <span>{proposal.parcelas}x sem juros</span>
+                                                <span>{formatCurrency(totalFinal / proposal.parcelas)}/parcela</span>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="border-b border-gray-700 pb-2">
-                                        <span className="mb-1 block text-muted-foreground/50">Carga horaria (h/dia)</span>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            max={24}
-                                            value={planejamento360.horasCuidadoDia}
-                                            onChange={(e) => {
-                                                setPlanejamento360((p) => ({
-                                                    ...p,
-                                                    horasCuidadoDia: Math.min(24, Math.max(1, num(e.target.value, p.horasCuidadoDia))),
-                                                }));
-                                                queueAutoRecalculate();
-                                            }}
-                                            className="w-full rounded border border-gray-600 bg-neutral-900 px-2 py-1 text-sm font-bold text-white"
-                                        />
-                                    </div>
-                                    <div className="border-b border-gray-700 pb-2">
-                                        <span className="mb-1 block text-muted-foreground/50">Profissional</span>
-                                        <select
-                                            value={planoResumoOverrides.tipoProfissional || 'AUTO'}
-                                            onChange={(e) => applyResumoTipoProfissional(e.target.value)}
-                                            className="w-full rounded border border-gray-600 bg-neutral-900 px-2 py-1 text-sm font-bold text-blue-300"
-                                        >
-                                            <option value="AUTO">AUTO ({tipoProfissionalResumoAtivo})</option>
-                                            <option value="CUIDADOR">CUIDADOR</option>
-                                            <option value="AUXILIAR_ENF">AUXILIAR_ENF</option>
-                                            <option value="TECNICO_ENF">TECNICO_ENF</option>
-                                        </select>
-                                    </div>
-                                    <div className="border-b border-gray-700 pb-2">
-                                        <span className="mb-1 block text-muted-foreground/50">Dias de cuidado</span>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            value={planejamento360.modeloEscala === 'BLOCO_DIAS' ? planejamento360.quantidadeDiasCuidado : selectedScenarioDays}
-                                            onChange={(e) => {
-                                                const nextDays = Math.max(1, num(e.target.value, planejamento360.quantidadeDiasCuidado));
-                                                setPlanejamento360((p) => ({
-                                                    ...p,
-                                                    modeloEscala: 'BLOCO_DIAS',
-                                                    recurrenceType: 'PACKAGE',
-                                                    periodicidade: 'DIARIO',
-                                                    diasAtendimento: [],
-                                                    quantidadeDiasCuidado: nextDays,
-                                                }));
-                                                queueAutoRecalculate();
-                                            }}
-                                            className="w-full rounded border border-gray-600 bg-neutral-900 px-2 py-1 text-sm font-bold text-white"
-                                        />
-                                    </div>
-                                    <div className="border-b border-gray-700 pb-2">
-                                        <span className="mb-1 block text-muted-foreground/50">Pacientes</span>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            max={6}
-                                            value={planejamento360.quantidadePacientes}
-                                            onChange={(e) => {
-                                                setPlanejamento360((p) => ({
-                                                    ...p,
-                                                    quantidadePacientes: Math.max(1, Math.min(6, num(e.target.value, p.quantidadePacientes))),
-                                                }));
-                                                queueAutoRecalculate();
-                                            }}
-                                            className="w-full rounded border border-gray-600 bg-neutral-900 px-2 py-1 text-sm font-bold text-white"
-                                        />
-                                    </div>
-                                    <div className="border-b border-gray-700 pb-2">
-                                        <span className="mb-1 block text-muted-foreground/50">Modelo escala</span>
-                                        <select
-                                            value={planejamento360.modeloEscala}
-                                            onChange={(e) => {
-                                                const nextModel = e.target.value as Planejamento360['modeloEscala'];
-                                                setPlanejamento360((p) => {
-                                                    if (nextModel === 'CONTINUO') {
-                                                        return {
-                                                            ...p,
-                                                            modeloEscala: nextModel,
-                                                            recurrenceType: 'PACKAGE',
-                                                            diasAtendimento: ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'],
-                                                        };
-                                                    }
-                                                    if (nextModel === 'BLOCO_DIAS') {
-                                                        return {
-                                                            ...p,
-                                                            modeloEscala: nextModel,
-                                                            recurrenceType: 'PACKAGE',
-                                                            diasAtendimento: [],
-                                                            periodicidade: 'DIARIO',
-                                                        };
-                                                    }
-                                                    return {
-                                                        ...p,
-                                                        modeloEscala: nextModel,
-                                                        recurrenceType: p.periodicidade === 'QUINZENAL'
-                                                            ? 'BIWEEKLY'
-                                                            : p.periodicidade === 'MENSAL'
-                                                                ? 'MONTHLY'
-                                                                : 'WEEKLY',
-                                                        diasAtendimento: p.diasAtendimento.length ? p.diasAtendimento : ['seg', 'ter', 'qua', 'qui', 'sex'],
-                                                    };
-                                                });
-                                                queueAutoRecalculate();
-                                            }}
-                                            className="w-full rounded border border-gray-600 bg-neutral-900 px-2 py-1 text-xs font-bold text-white"
-                                        >
-                                            <option value="DIAS_ESPECIFICOS">DIAS_ESPECIFICOS</option>
-                                            <option value="CONTINUO">CONTINUO</option>
-                                            <option value="BLOCO_DIAS">BLOCO_DIAS</option>
-                                        </select>
-                                    </div>
-                                </div>
 
-                                <div className="rounded-lg bg-card/5 p-4">
-                                    <div className="mb-2 flex justify-between">
-                                        <span className="text-sm text-muted-foreground">Total bruto</span>
-                                        <span>{formatCurrency(num(proposal.valorTotal))}</span>
-                                    </div>
-                                    <div className="mb-2 flex justify-between text-success-500">
-                                        <span className="text-sm">Desconto (%)</span>
-                                        <span>- {num(proposal.descontoPercent).toFixed(2)}%</span>
-                                    </div>
-                                    <div className="mb-2 flex justify-between text-success-500">
-                                        <span className="text-sm">Descontos</span>
-                                        <span>- {formatCurrency(num(proposal.descontos))}</span>
-                                    </div>
-                                    <div className="mt-2 flex justify-between border-t border-gray-600 pt-2 text-xl font-bold">
-                                        <span>Total final</span>
-                                        <span>{formatCurrency(totalFinal)}</span>
-                                    </div>
-                                    <div className="mt-2 flex justify-between text-xs text-muted-foreground/50">
-                                        <span>Mensal equivalente</span>
-                                        <span>{formatCurrency((totalFinal / Math.max(1, selectedScenarioDays)) * 30)}</span>
-                                    </div>
-                                    <div className="mt-1 flex justify-between text-xs text-muted-foreground/50">
-                                        <span>Semanal equivalente</span>
-                                        <span>{formatCurrency((totalFinal / Math.max(1, selectedScenarioDays)) * 7)}</span>
-                                    </div>
-                                </div>
-
-                                <button
-                                    onClick={handleSendProposal}
-                                    disabled={sending || !selectedScenario}
-                                    className={`mt-8 flex w-full items-center justify-center gap-2 rounded-xl py-4 text-lg font-bold shadow-lg transition active:scale-95 ${sending ? 'cursor-wait bg-gray-600' : 'bg-secondary-500 text-white hover:bg-secondary-400'
-                                        }`}
-                                >
-                                    {sending ? 'Enviando...' : 'Enviar via WhatsApp'}
-                                </button>
-                                <div className="mt-4 text-center">
-                                    <button onClick={() => setStep('responsibilities')} className="text-sm text-muted-foreground underline hover:text-white">
-                                        Voltar para revisao
+                                    <button
+                                        onClick={handleSendProposal}
+                                        disabled={sending || !selectedScenario}
+                                        className={`mt-5 flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-base font-bold shadow-lg transition active:scale-95 ${sending ? 'cursor-wait bg-gray-600' : 'bg-secondary-500 text-white hover:bg-secondary-400'}`}
+                                    >
+                                        {sending ? 'Enviando...' : 'Enviar via WhatsApp'}
                                     </button>
+                                    <div className="mt-3 text-center">
+                                        <button onClick={() => setStep('responsibilities')} className="text-xs text-gray-500 underline hover:text-white">
+                                            Voltar para revisao
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="rounded-xl border border-primary-200 bg-info-50 p-4 text-sm text-primary">
-                                <strong>Dica:</strong> Esta etapa substitui a tela separada de orcamento e centraliza a decisao final antes do envio da pre-proposta.
+                                {/* Quick info */}
+                                <div className="rounded-xl border border-border bg-card p-4 text-xs text-muted-foreground space-y-1">
+                                    <p><span className="font-medium text-foreground">Paciente:</span> {selectedPatient?.nome || '-'}</p>
+                                    <p><span className="font-medium text-foreground">Profissional:</span> {tipoProfissionalResumoAtivo}</p>
+                                    <p><span className="font-medium text-foreground">Complexidade:</span> {complexidadeResumoAtiva}</p>
+                                    <p><span className="font-medium text-foreground">Modelo:</span> {planejamento360.modeloEscala}</p>
+                                    <p><span className="font-medium text-foreground">Periodo:</span> {planejamento360.dataInicioCuidado || '-'} a {planejamento360.dataFimCuidado || '-'}</p>
+                                    <p><span className="font-medium text-foreground">Cobertura:</span> {selectedScenarioDays}d · {selectedScenarioHours}h · {planejamento360.horasCuidadoDia}h/dia</p>
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -8,6 +8,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { BreakdownTable } from '@/components/pricing/BreakdownTable';
+import type { PricingBreakdownItem } from '@/lib/pricing/enterprise-engine';
 import {
     calculateCoveragePreset,
     COVERAGE_PRESET_KEYS,
@@ -28,6 +30,7 @@ interface OrcamentoDetalhe {
     descontoManualPercent?: number | null;
     minicustosDesativados?: string | null;
     snapshotInput?: string | null;
+    pricingBreakdown?: string | null;
     enviadoEm?: string | null;
     aceitoEm?: string | null;
     createdAt: string;
@@ -45,6 +48,7 @@ interface CenarioResumo {
     totalSemanal: number;
     estimativaMensal: number;
     plantoes?: unknown[];
+    breakdown?: PricingBreakdownItem[];
 }
 
 interface ScenarioPricingPreview {
@@ -310,6 +314,7 @@ function parseCenario(json?: string | null): CenarioResumo | null {
             totalSemanal,
             estimativaMensal,
             plantoes: Array.isArray(parsed.plantoes) ? parsed.plantoes : undefined,
+            breakdown: Array.isArray(parsed.breakdown) ? parsed.breakdown as PricingBreakdownItem[] : undefined,
         };
     } catch {
         return null;
@@ -841,20 +846,60 @@ export default function OrcamentoDetalhePage() {
             <Card className="mt-6">
                 <h3 className="mb-3 font-semibold">Cenarios</h3>
                 <div className="grid gap-3 text-sm md:grid-cols-3">
-                    <div className="rounded-lg border border-border p-3">
-                        <p className="mb-1 font-medium">Economico</p>
-                        <p className="text-foreground whitespace-pre-wrap">{orcamento.cenarioEconomico || '-'}</p>
-                    </div>
-                    <div className="rounded-lg border border-border p-3">
-                        <p className="mb-1 font-medium">Recomendado</p>
-                        <p className="text-foreground whitespace-pre-wrap">{orcamento.cenarioRecomendado || '-'}</p>
-                    </div>
-                    <div className="rounded-lg border border-border p-3">
-                        <p className="mb-1 font-medium">Premium</p>
-                        <p className="text-foreground whitespace-pre-wrap">{orcamento.cenarioPremium || '-'}</p>
-                    </div>
+                    {scenarioCards.map((scenario) => {
+                        const selected = sanitizeScenarioKey(orcamento.cenarioSelecionado) === scenario.key;
+                        return (
+                            <div
+                                key={scenario.key}
+                                className={`rounded-lg border p-3 ${selected ? 'border-emerald-500 bg-secondary-400/5' : 'border-border'}`}
+                            >
+                                <p className="mb-1 font-medium">
+                                    {scenario.label} {selected ? '(selecionado)' : ''}
+                                </p>
+                                {scenario.data ? (
+                                    <div>
+                                        <p className="text-lg font-semibold text-foreground">
+                                            {formatCurrency(scenario.data.totalSemanal)}<span className="ml-1 text-xs font-normal text-muted-foreground">/periodo</span>
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Mensal eq.: {formatCurrency(scenario.data.estimativaMensal)}
+                                        </p>
+                                        {scenario.data.breakdown && scenario.data.breakdown.length > 0 && (
+                                            <div className="mt-2">
+                                                <BreakdownTable
+                                                    lines={scenario.data.breakdown}
+                                                    title={`Detalhamento — ${scenario.label}`}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-foreground whitespace-pre-wrap">-</p>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             </Card>
+
+            {/* Fallback: show pricingBreakdown for older records without per-scenario breakdown */}
+            {orcamento.pricingBreakdown && !scenarioCards.some((s) => s.data?.breakdown?.length) && (() => {
+                try {
+                    const parsed = JSON.parse(orcamento.pricingBreakdown) as PricingBreakdownItem[];
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        return (
+                            <div className="mt-4">
+                                <BreakdownTable
+                                    lines={parsed}
+                                    title="Detalhamento de custos (cenario selecionado)"
+                                    defaultOpen
+                                />
+                            </div>
+                        );
+                    }
+                } catch { /* ignore invalid JSON */ }
+                return null;
+            })()}
 
             {configuredAction && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

@@ -6,6 +6,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { BreakdownTable } from '@/components/pricing/BreakdownTable';
+import type { PricingBreakdownItem } from '@/lib/pricing/enterprise-engine';
 
 interface PacienteOption {
     id: string;
@@ -415,6 +417,21 @@ function NovoOrcamentoContent() {
                                 );
                             })}
                         </div>
+
+                        {form.snapshotsByScenario?.[form.cenarioSelecionado] && (() => {
+                            const snapshot = form.snapshotsByScenario[form.cenarioSelecionado];
+                            const output = snapshot?.output as { breakdown?: PricingBreakdownItem[] } | undefined;
+                            const breakdown = output?.breakdown;
+                            if (!breakdown?.length) return null;
+                            return (
+                                <div className="mt-3">
+                                    <BreakdownTable
+                                        lines={breakdown}
+                                        title={`Detalhamento — ${form.cenarioSelecionado.charAt(0).toUpperCase() + form.cenarioSelecionado.slice(1)}`}
+                                    />
+                                </div>
+                            );
+                        })()}
                     </div>
 
                     <div>
