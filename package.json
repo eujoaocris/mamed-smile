@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev-with-whatsapp.cjs",
-    "dev:web": "next dev",
+    "dev:web": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
     "start:web": "next start",

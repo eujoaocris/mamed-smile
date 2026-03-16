@@ -63,6 +63,14 @@ const DEFAULT_DISEASES = [
     { codigo: 'DEMENCIA', nome: 'Demencia', complexidade: 'MEDIA', profissionalMinimo: 'AUXILIAR_ENF', adicionalPercent: 6 },
 ];
 
+const DEFAULT_SERVICOS_AVULSOS = [
+    { codigo: 'BANHO_ASSISTIDO', nome: 'Banho assistido', valorCuidador: 80, valorAuxiliarEnf: 100, valorTecnicoEnf: 120, valorEnfermeiro: 150, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+    { codigo: 'ACOMPANHAMENTO_CONSULTA', nome: 'Acompanhamento em consulta', valorCuidador: 120, valorAuxiliarEnf: 150, valorTecnicoEnf: 180, valorEnfermeiro: 220, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+    { codigo: 'TROCA_FRALDA', nome: 'Troca de fralda', valorCuidador: 50, valorAuxiliarEnf: 60, valorTecnicoEnf: 70, valorEnfermeiro: 90, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+    { codigo: 'APLICACAO_MEDICACAO', nome: 'Aplicação de medicação', valorCuidador: 0, valorAuxiliarEnf: 80, valorTecnicoEnf: 100, valorEnfermeiro: 130, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+    { codigo: 'CURATIVOS', nome: 'Curativos', valorCuidador: 0, valorAuxiliarEnf: 90, valorTecnicoEnf: 110, valorEnfermeiro: 140, aplicarMargem: true, aplicarMinicustos: false, aplicarImpostos: true },
+];
+
 async function ensureDefaultRows(configVersionId: string, unidadeId: string) {
     for (const item of DEFAULT_HOUR_FACTORS) {
         await prisma.unidadeRegraHora.upsert({
@@ -162,6 +170,27 @@ async function ensureDefaultRows(configVersionId: string, unidadeId: string) {
             update: {},
         });
     }
+
+    for (const item of DEFAULT_SERVICOS_AVULSOS) {
+        await prisma.unidadeServicoAvulso.upsert({
+            where: { configVersionId_codigo: { configVersionId, codigo: item.codigo } },
+            create: {
+                unidadeId,
+                configVersionId,
+                codigo: item.codigo,
+                nome: item.nome,
+                valorCuidador: item.valorCuidador,
+                valorAuxiliarEnf: item.valorAuxiliarEnf,
+                valorTecnicoEnf: item.valorTecnicoEnf,
+                valorEnfermeiro: item.valorEnfermeiro,
+                aplicarMargem: item.aplicarMargem,
+                aplicarMinicustos: item.aplicarMinicustos,
+                aplicarImpostos: item.aplicarImpostos,
+                ativo: true,
+            },
+            update: {},
+        });
+    }
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -173,7 +202,7 @@ export async function ensureDefaultPricingConfig() {
         where: { codigo: DEFAULT_UNIT_CODE },
         create: {
             codigo: DEFAULT_UNIT_CODE,
-            nome: 'Unidade Matriz',
+            nome: 'Mãos Amigas — Toledo PR',
             cidade: 'Toledo',
             estado: 'PR',
             timezone: 'America/Sao_Paulo',
@@ -341,10 +370,10 @@ export async function getPricingConfigSnapshot(options?: {
     const unidadeWhere = configVersionById
         ? { id: configVersionById.unidadeId }
         : options?.unidadeId
-        ? { id: options.unidadeId }
-        : options?.unidadeCodigo
-            ? { codigo: options.unidadeCodigo }
-            : { codigo: DEFAULT_UNIT_CODE };
+            ? { id: options.unidadeId }
+            : options?.unidadeCodigo
+                ? { codigo: options.unidadeCodigo }
+                : { codigo: DEFAULT_UNIT_CODE };
 
     const unidade = await prisma.unidade.findUnique({
         where: unidadeWhere,

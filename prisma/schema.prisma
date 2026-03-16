@@ -386,6 +386,7 @@ model Unidade {
   minicustos          UnidadeMinicusto[]
   percentuaisComissao UnidadePercentualComissao[]
   descontos           UnidadeDescontoPreset[]
+  servicosAvulsos     UnidadeServicoAvulso[]
   contratos           UnidadeContratoTemplate[]
   simulacoes          OrcamentoSimulacao[]
   orcamentos          Orcamento[]
@@ -435,6 +436,7 @@ model UnidadeConfiguracaoVersao {
   minicustos          UnidadeMinicusto[]
   percentuaisComissao UnidadePercentualComissao[]
   descontos           UnidadeDescontoPreset[]
+  servicosAvulsos     UnidadeServicoAvulso[]
   simulacoes          OrcamentoSimulacao[]
   orcamentos          Orcamento[]
   audits              ConfigAuditLog[]
@@ -554,6 +556,31 @@ model UnidadeDescontoPreset {
   configVersion UnidadeConfiguracaoVersao @relation(fields: [configVersionId], references: [id], onDelete: Cascade)
 
   @@unique([configVersionId, nome])
+  @@index([unidadeId, ativo])
+}
+
+model UnidadeServicoAvulso {
+  id                String   @id @default(cuid())
+  unidadeId         String
+  configVersionId   String
+  codigo            String
+  nome              String
+  descricao         String?
+  valorCuidador     Float    @default(0)
+  valorAuxiliarEnf  Float    @default(0)
+  valorTecnicoEnf   Float    @default(0)
+  valorEnfermeiro   Float    @default(0)
+  aplicarMargem     Boolean  @default(true)
+  aplicarMinicustos Boolean  @default(false)
+  aplicarImpostos   Boolean  @default(true)
+  ativo             Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  unidade       Unidade                   @relation(fields: [unidadeId], references: [id], onDelete: Cascade)
+  configVersion UnidadeConfiguracaoVersao @relation(fields: [configVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([configVersionId, codigo])
   @@index([unidadeId, ativo])
 }
 

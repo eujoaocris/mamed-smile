@@ -68,6 +68,8 @@ export async function logEvent(params: LogParams): Promise<void> {
 
         logToConsole(params, metadata);
 
+        if (process.env.USE_MOCK_DB === 'true') return;
+
         await prisma.systemLog.create({
             data: {
                 type: params.type,
@@ -85,7 +87,9 @@ export async function logEvent(params: LogParams): Promise<void> {
             },
         });
     } catch (error) {
-        console.error('[LOGGER_CRITICAL] failed to persist structured log', error);
+        if (process.env.USE_MOCK_DB !== 'true') {
+            console.error('[LOGGER_CRITICAL] failed to persist structured log', error);
+        }
     }
 }
 

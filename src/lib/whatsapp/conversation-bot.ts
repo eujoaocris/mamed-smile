@@ -4,6 +4,10 @@ import { getUserState } from '@/lib/whatsapp/state-manager';
 import { notifyAdminHelp } from '@/lib/notifications/emergency';
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+
+// In-memory fallback when database is unavailable
+const memoryStore = new Map<string, { state: ConversationState; data: ConversationData; lastActivity: number }>();
+const USE_MOCK = process.env.USE_MOCK_DB === 'true';
 const LEAD_COMPATIBLE_STATUSES = new Set([
     'LEAD',
     'AVALIACAO',
@@ -239,57 +243,88 @@ function parseStartDate(text: string): string | null {
 }
 
 async function saveSession(phone: string, state: ConversationState, data: ConversationData) {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + SESSION_TIMEOUT_MS);
+    memoryStore.set(phone, { state, data, lastActivity: Date.now() });
 
-    await prisma.whatsAppSession.upsert({
-        where: { phone },
-        update: {
-            state,
-            data: JSON.stringify(data),
-            lastActivity: now,
-            expiresAt,
-        },
-        create: {
-            phone,
-            state,
-            data: JSON.stringify(data),
-            lastActivity: now,
-            expiresAt,
-        },
-    });
+    if (USE_MOCK) return;
+
+    try {
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + SESSION_TIMEOUT_MS);
+
+        await prisma.whatsAppSession.upsert({
+            where: { phone },
+            update: {
+                state,
+                data: JSON.stringify(data),
+                lastActivity: now,
+                expiresAt,
+            },
+            create: {
+                phone,
+                state,
+                data: JSON.stringify(data),
+                lastActivity: now,
+                expiresAt,
+            },
+        });
+    } catch (err) {
+        console.warn('[bot] DB saveSession failed, using memory fallback:', (err as Error).message?.slice(0, 80));
+    }
 }
 
 async function loadSession(
     phone: string
 ): Promise<{ state: ConversationState; data: ConversationData; hasRecord: boolean }> {
-    const session = await prisma.whatsAppSession.findUnique({ where: { phone } });
-    if (!session) return { state: 'MENU', data: {}, hasRecord: false };
-
-    const now = Date.now();
-    const lastActivity = session.lastActivity?.getTime() || session.updatedAt.getTime();
-    const expiredByInactivity = now - lastActivity > SESSION_TIMEOUT_MS;
-    const expiredByDate = session.expiresAt ? session.expiresAt.getTime() < now : false;
-
-    if (expiredByInactivity || expiredByDate) {
-        return { state: 'MENU', data: {}, hasRecord: false };
+    // Try memory store first
+    const mem = memoryStore.get(phone);
+    if (mem) {
+        const expired = Date.now() - mem.lastActivity > SESSION_TIMEOUT_MS;
+        if (expired) {
+            memoryStore.delete(phone);
+            return { state: 'MENU', data: {}, hasRecord: false };
+        }
+        return { state: mem.state, data: mem.data, hasRecord: true };
     }
 
-    const state = (session.state || 'MENU') as ConversationState;
-    const data = parseConversationData(session.data);
-    return { state, data, hasRecord: true };
+    if (USE_MOCK) return { state: 'MENU', data: {}, hasRecord: false };
+
+    try {
+        const session = await prisma.whatsAppSession.findUnique({ where: { phone } });
+        if (!session) return { state: 'MENU', data: {}, hasRecord: false };
+
+        const now = Date.now();
+        const lastActivity = session.lastActivity?.getTime() || session.updatedAt.getTime();
+        const expiredByInactivity = now - lastActivity > SESSION_TIMEOUT_MS;
+        const expiredByDate = session.expiresAt ? session.expiresAt.getTime() < now : false;
+
+        if (expiredByInactivity || expiredByDate) {
+            return { state: 'MENU', data: {}, hasRecord: false };
+        }
+
+        const state = (session.state || 'MENU') as ConversationState;
+        const data = parseConversationData(session.data);
+        return { state, data, hasRecord: true };
+    } catch (err) {
+        console.warn('[bot] DB loadSession failed, using memory fallback:', (err as Error).message?.slice(0, 80));
+        return { state: 'MENU', data: {}, hasRecord: false };
+    }
 }
 
 async function logIncoming(jid: string, text: string, state: string) {
-    await prisma.mensagem.create({
-        data: {
-            telefone: jid,
-            direcao: 'IN',
-            conteudo: text,
-            flow: 'BOT_ATENDIMENTO',
-            step: state,
-        },
-    });
+    if (USE_MOCK) return;
+    try {
+        await prisma.mensagem.create({
+            data: {
+                telefone: jid,
+                direcao: 'IN',
+                conteudo: text,
+                flow: 'BOT_ATENDIMENTO',
+                step: state,
+            },
+        });
+    } catch {
+        // silently skip logging when DB is down
+    }
 }
 
 async function sendAndTrack(jid: string, text: string): Promise<boolean> {
@@ -298,80 +333,91 @@ async function sendAndTrack(jid: string, text: string): Promise<boolean> {
 }
 
 async function syncLeadDraft(whatsappPhone: string, data: ConversationData) {
-    const phone = sanitizePhone(whatsappPhone);
-    if (phone.length < 10) return;
+    if (USE_MOCK) return;
+    try {
+        const phone = sanitizePhone(whatsappPhone);
+        if (phone.length < 10) return;
 
-    const existing = await prisma.paciente.findUnique({
-        where: { telefone: phone },
-        select: { status: true },
-    });
+        const existing = await prisma.paciente.findUnique({
+            where: { telefone: phone },
+            select: { status: true },
+        });
 
-    if (existing && !LEAD_COMPATIBLE_STATUSES.has(existing.status)) {
-        return;
+        if (existing && !LEAD_COMPATIBLE_STATUSES.has(existing.status)) {
+            return;
+        }
+
+        const location = parseLocation(data.endereco);
+        const patientName = data.nomePaciente || data.nomeResponsavel || 'Lead WhatsApp';
+        const tipo = data.tipoCuidadoCodigo || 'HOME_CARE';
+        const prioridade = data.prioridade || 'NORMAL';
+
+        await prisma.paciente.upsert({
+            where: { telefone: phone },
+            update: {
+                nome: patientName,
+                cidade: location.cidade || undefined,
+                bairro: location.bairro || undefined,
+                tipo,
+                prioridade,
+                status: 'LEAD',
+            },
+            create: {
+                telefone: phone,
+                nome: patientName,
+                cidade: location.cidade || null,
+                bairro: location.bairro || null,
+                tipo,
+                prioridade,
+                status: 'LEAD',
+            },
+        });
+    } catch {
+        // silently skip sync when DB is down
     }
-
-    const location = parseLocation(data.endereco);
-    const patientName = data.nomePaciente || data.nomeResponsavel || 'Lead WhatsApp';
-    const tipo = data.tipoCuidadoCodigo || 'HOME_CARE';
-    const prioridade = data.prioridade || 'NORMAL';
-
-    await prisma.paciente.upsert({
-        where: { telefone: phone },
-        update: {
-            nome: patientName,
-            cidade: location.cidade || undefined,
-            bairro: location.bairro || undefined,
-            tipo,
-            prioridade,
-            status: 'LEAD',
-        },
-        create: {
-            telefone: phone,
-            nome: patientName,
-            cidade: location.cidade || null,
-            bairro: location.bairro || null,
-            tipo,
-            prioridade,
-            status: 'LEAD',
-        },
-    });
 }
 
 async function finalizeLeadFromBudget(whatsappPhone: string, data: ConversationData) {
     await syncLeadDraft(whatsappPhone, data);
 
-    const phone = sanitizePhone(whatsappPhone);
-    const patientName = data.nomePaciente || data.nomeResponsavel || 'Lead WhatsApp';
-    const contactPhone = sanitizePhone(data.telefoneContato || '') || phone;
+    if (USE_MOCK) return;
 
-    await prisma.formSubmission.create({
-        data: {
-            tipo: 'ORCAMENTO_WHATSAPP',
-            telefone: phone,
-            dados: JSON.stringify({
-                ...data,
-                whatsappPhone: phone,
-                contactPhone,
-                submittedAt: new Date().toISOString(),
-                flowVersion: 'commercial-v2',
-            }),
-        },
-    });
+    try {
+        const phone = sanitizePhone(whatsappPhone);
+        const patientName = data.nomePaciente || data.nomeResponsavel || 'Lead WhatsApp';
+        const contactPhone = sanitizePhone(data.telefoneContato || '') || phone;
 
-    await prisma.systemLog.create({
-        data: {
-            type: 'WHATSAPP',
-            action: 'orcamento_whatsapp_capturado',
-            message: `Lead capturado via WhatsApp: ${patientName}`,
-            metadata: JSON.stringify({
-                whatsappPhone: phone,
-                contactPhone,
-                tipoCuidado: data.tipoCuidadoCodigo,
-                urgencia: data.urgenciaLabel,
-                cargaHoraria: data.cargaHorariaLabel,
-            }),
-        },
-    });
+        await prisma.formSubmission.create({
+            data: {
+                tipo: 'ORCAMENTO_WHATSAPP',
+                telefone: phone,
+                dados: JSON.stringify({
+                    ...data,
+                    whatsappPhone: phone,
+                    contactPhone,
+                    submittedAt: new Date().toISOString(),
+                    flowVersion: 'commercial-v2',
+                }),
+            },
+        });
+
+        await prisma.systemLog.create({
+            data: {
+                type: 'WHATSAPP',
+                action: 'orcamento_whatsapp_capturado',
+                message: `Lead capturado via WhatsApp: ${patientName}`,
+                metadata: JSON.stringify({
+                    whatsappPhone: phone,
+                    contactPhone,
+                    tipoCuidado: data.tipoCuidadoCodigo,
+                    urgencia: data.urgenciaLabel,
+                    cargaHoraria: data.cargaHorariaLabel,
+                }),
+            },
+        });
+    } catch {
+        // silently skip finalization when DB is down
+    }
 }
 
 function extractTextFromPayload(payload: any): string {

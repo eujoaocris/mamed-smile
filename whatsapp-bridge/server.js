@@ -13,29 +13,33 @@ const path = require('path');
 const crypto = require('node:crypto');
 
 function loadLocalEnvFile() {
-    const envPath = path.resolve(process.cwd(), '.env.local');
-    if (!fs.existsSync(envPath)) return;
+    const cwd = process.cwd();
+    const envFiles = [path.resolve(cwd, '.env'), path.resolve(cwd, '.env.local')];
 
-    const lines = fs.readFileSync(envPath, 'utf-8').split(/\r?\n/);
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
+    for (const envPath of envFiles) {
+        if (!fs.existsSync(envPath)) continue;
 
-        const separatorIndex = trimmed.indexOf('=');
-        if (separatorIndex <= 0) continue;
+        const lines = fs.readFileSync(envPath, 'utf-8').split(/\r?\n/);
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
 
-        const key = trimmed.slice(0, separatorIndex).trim();
-        if (!key || process.env[key] !== undefined) continue;
+            const separatorIndex = trimmed.indexOf('=');
+            if (separatorIndex <= 0) continue;
 
-        let value = trimmed.slice(separatorIndex + 1).trim();
-        if (
-            (value.startsWith('"') && value.endsWith('"')) ||
-            (value.startsWith('\'') && value.endsWith('\''))
-        ) {
-            value = value.slice(1, -1);
+            const key = trimmed.slice(0, separatorIndex).trim();
+            if (!key || process.env[key] !== undefined) continue;
+
+            let value = trimmed.slice(separatorIndex + 1).trim();
+            if (
+                (value.startsWith('"') && value.endsWith('"')) ||
+                (value.startsWith('\'') && value.endsWith('\''))
+            ) {
+                value = value.slice(1, -1);
+            }
+
+            process.env[key] = value;
         }
-
-        process.env[key] = value;
     }
 }
 

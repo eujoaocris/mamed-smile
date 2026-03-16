@@ -44,6 +44,9 @@ export function defaultContractTemplate(): string {
         '',
         'Politica de cancelamento/reagendamento',
         '<<politica.cancelamento>>',
+        '',
+        'Politica de falecimento',
+        '<<politica.falecimento>>',
     ].join('\n');
 }
 
@@ -136,6 +139,7 @@ export function buildContractRenderData(
         },
         politica: {
             cancelamento: options?.cancellationPolicy || 'Cancelamentos com menos de 24h podem gerar custos proporcionais.',
+            falecimento: 'Em caso de obito do paciente, o contrato sera automaticamente cancelado mediante apresentacao da Certidao de Obito. O ultimo dia de cobranca sera o ultimo plantao efetivo, incluindo o dia do falecimento caso o profissional ja estivesse em atendimento. Valores pagos antecipadamente serao devolvidos proporcionalmente em ate 15 (quinze) dias uteis, via PIX, transferencia bancaria ou dinheiro em especie.',
         },
     };
 }

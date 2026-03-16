@@ -507,6 +507,7 @@ export async function generateOrcamentoPDF(data: OrcamentoPDFData): Promise<Buff
                 `Parcelamento disponivel: ${comercial.opcoesParcelamento.join(', ')}.`,
                 'Substituicao: profissional substituto acionado sem custo adicional em caso de falta.',
                 'Cancelamento: conforme politica do contrato. Menos de 24h pode incorrer em taxa.',
+                'Falecimento: em caso de obito do paciente, o contrato sera automaticamente cancelado mediante apresentacao da Certidao de Obito pela familia ou responsavel legal. O ultimo dia de cobranca sera o ultimo dia em que houve plantao efetivo, incluindo o dia do falecimento caso o profissional ja estivesse em atendimento. Valores pagos antecipadamente referentes a periodo posterior ao ultimo plantao serao devolvidos proporcionalmente em ate 15 (quinze) dias uteis, via PIX, transferencia bancaria ou dinheiro em especie, conforme preferencia da familia.',
                 'Reajuste: valores revisados trimestralmente ou conforme alteracao de escopo.',
                 'LGPD: dados do paciente tratados conforme Lei 13.709/2018.',
                 `Validade: ${data.validadeDias} dias a partir de ${data.dataEmissao}.`,

@@ -50,15 +50,20 @@ export async function GET() {
 
     try {
         const dbStart = Date.now();
-        const { prisma } = await import('@/lib/prisma');
-        await prisma.$queryRaw`SELECT 1`;
-        const schema = await getDbSchemaCapabilities();
-        dbSchemaOk = schema.dbSchemaOk;
-        missingColumns = schema.missingColumns;
-        checks.database = {
-            status: 'ok',
-            latency: Date.now() - dbStart,
-        };
+        if (process.env.USE_MOCK_DB === 'true') {
+            dbSchemaOk = true;
+            checks.database = { status: 'ok', latency: 0 };
+        } else {
+            const { prisma } = await import('@/lib/prisma');
+            await prisma.$queryRaw`SELECT 1`;
+            const schema = await getDbSchemaCapabilities();
+            dbSchemaOk = schema.dbSchemaOk;
+            missingColumns = schema.missingColumns;
+            checks.database = {
+                status: 'ok',
+                latency: Date.now() - dbStart,
+            };
+        }
     } catch {
         checks.database = { status: 'error' };
     }

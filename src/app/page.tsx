@@ -9,19 +9,25 @@ export default function Home() {
             <span className="text-2xl"></span>
             <span className="text-xl font-bold text-blue-900">Mãos Amigas</span>
           </div>
-          <div className="flex gap-4">
-            <Link 
-              href="/login" 
-              className="px-4 py-2 text-primary hover:text-primary font-medium"
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Link
+              href="/trabalhe-conosco"
+              className="hidden sm:block px-3 py-2 text-primary hover:text-primary-hover font-medium text-sm transition-colors"
+            >
+              Trabalhe Conosco
+            </Link>
+            <Link
+              href="/login"
+              className="px-3 py-2 text-primary hover:text-primary-hover font-medium text-sm transition-colors"
             >
               Entrar
             </Link>
-            <a 
-              href="#contato" 
+            <Link
+              href="/solicitar-orcamento"
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover font-medium"
             >
-              Fale Conosco
-            </a>
+              Solicitar Orçamento
+            </Link>
           </div>
         </nav>
       </header>
@@ -33,18 +39,24 @@ export default function Home() {
               Cuidado Humanizado para Quem Você Ama
             </h1>
             <p className="text-xl text-foreground max-w-3xl mx-auto mb-8">
-              Conectamos famílias a cuidadores qualificados para atendimento domiciliar 
+              Conectamos famílias a cuidadores qualificados para atendimento domiciliar
               e acompanhamento hospitalar. Profissionais verificados, atendimento 24 horas.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a 
-                href="https://wa.me/5511999999999?text=Olá" 
+              <Link
+                href="/solicitar-orcamento"
+                className="px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover font-semibold text-lg flex items-center justify-center gap-2"
+              >
+                📋 Solicitar Orçamento
+              </Link>
+              <a
+                href="https://wa.me/5545999999999?text=Olá,%20preciso%20de%20informações%20sobre%20cuidadores"
                 className="px-8 py-4 bg-secondary-600 text-white rounded-lg hover:bg-secondary-700 font-semibold text-lg flex items-center justify-center gap-2"
               >
-                <span></span> Falar pelo WhatsApp
+                💬 Falar pelo WhatsApp
               </a>
-              <a 
-                href="#servicos" 
+              <a
+                href="#servicos"
                 className="px-8 py-4 border-2 border-blue-600 text-primary rounded-lg hover:bg-info-50 font-semibold text-lg"
               >
                 Conhecer Serviços
@@ -63,7 +75,7 @@ export default function Home() {
                 <div className="text-4xl mb-4"></div>
                 <h3 className="text-xl font-bold text-foreground mb-3">Home Care</h3>
                 <p className="text-foreground">
-                  Cuidado domiciliar personalizado com profissionais qualificados. 
+                  Cuidado domiciliar personalizado com profissionais qualificados.
                   Acompanhamento de idosos, pós-operatório e pacientes crônicos.
                 </p>
               </div>
@@ -71,7 +83,7 @@ export default function Home() {
                 <div className="text-4xl mb-4"></div>
                 <h3 className="text-xl font-bold text-foreground mb-3">Acompanhamento Hospitalar</h3>
                 <p className="text-foreground">
-                  Profissionais para acompanhar seu familiar durante internações. 
+                  Profissionais para acompanhar seu familiar durante internações.
                   Plantões diurnos e noturnos com relatórios diários.
                 </p>
               </div>
@@ -79,7 +91,7 @@ export default function Home() {
                 <div className="text-4xl mb-4"></div>
                 <h3 className="text-xl font-bold text-foreground mb-3">Equipe Especializada</h3>
                 <p className="text-foreground">
-                  Cuidadores, técnicos e auxiliares de enfermagem. 
+                  Cuidadores, técnicos e auxiliares de enfermagem.
                   Todos verificados, treinados e com experiência comprovada.
                 </p>
               </div>
@@ -149,17 +161,17 @@ export default function Home() {
               Nossa equipe está pronta para atender você. Entre em contato agora mesmo!
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a 
-                href="https://wa.me/5511999999999?text=Olá,%20preciso%20de%20informações%20sobre%20cuidadores" 
-                className="px-8 py-4 bg-secondary-600 text-white rounded-lg hover:bg-secondary-700 font-semibold text-lg flex items-center justify-center gap-2"
-              >
-                <span></span> WhatsApp
-              </a>
-              <a 
-                href="tel:08001234567" 
+              <Link
+                href="/solicitar-orcamento"
                 className="px-8 py-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover font-semibold text-lg flex items-center justify-center gap-2"
               >
-                <span></span> 0800 123 4567
+                📋 Solicitar Orçamento Online
+              </Link>
+              <a
+                href="https://wa.me/5545999999999?text=Olá,%20preciso%20de%20informações%20sobre%20cuidadores"
+                className="px-8 py-4 bg-secondary-600 text-white rounded-lg hover:bg-secondary-700 font-semibold text-lg flex items-center justify-center gap-2"
+              >
+                💬 WhatsApp
               </a>
             </div>
           </div>
@@ -173,12 +185,12 @@ export default function Home() {
             <p className="text-foreground mb-4">
               Cadastre-se e faça parte da nossa equipe de cuidadores
             </p>
-            <a 
-              href="https://wa.me/5511999999999?text=Olá,%20sou%20profissional%20e%20quero%20me%20cadastrar" 
-              className="inline-block px-6 py-3 border-2 border-blue-600 text-primary rounded-lg hover:bg-info-50 font-medium"
+            <Link
+              href="/trabalhe-conosco"
+              className="inline-block px-6 py-3 border-2 border-primary-600 text-primary-700 font-semibold rounded-lg hover:bg-primary-50 transition-colors"
             >
-              Quero me Cadastrar
-            </a>
+              Processo Seletivo Online
+            </Link>
           </div>
         </section>
       </main>
@@ -192,7 +204,7 @@ export default function Home() {
                 <span className="text-xl font-bold">Mãos Amigas</span>
               </div>
               <p className="text-muted-foreground">
-                Cuidado humanizado para quem você ama. 
+                Cuidado humanizado para quem você ama.
                 Conectando famílias a profissionais qualificados desde 2020.
               </p>
             </div>
